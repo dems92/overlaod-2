@@ -1,0 +1,10 @@
+{
+  "name": "overload",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Overload : suivi de musculation et de surcharge progressive",
+  "dependencies": {
+    "@upstash/redis": "^1.34.0",
+    "web-push": "^3.6.7"
+  }
+}
