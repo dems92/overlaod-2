@@ -20,3 +20,12 @@ Web app de suivi de musculation et de surcharge progressive, avec notifications.
 Une fois les variables ajoutées : ouvre l'app **depuis l'icône** de l'écran d'accueil → Réglages → Notifications → colle ta clé → Activer.
 
 Les séances restent enregistrées sur le téléphone. Exporte une sauvegarde de temps en temps (Réglages → Exporter mes données).
+
+## Nouveautés (version 1.2)
+
+- **Poids par série** : le poids général reste fixe ; chaque série peut avoir son propre poids (bouton « revenir au général »).
+- **Pop-up à 2 min 30 de repos** : bannière, vibration et bip (réglable dans Réglages → Repos), envoyé aussi en notification si elles sont activées.
+- **Widget chronomètre** : pastille flottante et déplaçable, visible sur tous les onglets ; mode chronomètre libre hors séance.
+- **Salles** : Fitness Park, On Air, Basic-Fit ou ta propre salle (Réglages → Mes salles). « Dernière fois » reprend en priorité les charges de la même salle, et les stats se filtrent par salle.
+- **Catalogue** : 459 exercices, filtrables par portion du muscle (ex. pectoraux haut / milieu / bas), par type (polyarticulaire / isolation), par matériel, avec articulations et calories estimées.
+- Les anciennes sauvegardes et les données déjà sur le téléphone restent compatibles.

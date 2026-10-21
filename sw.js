@@ -1,5 +1,5 @@
 // Overload : hors connexion + notifications push
-const V = 'overload-v4';
+const V = 'overload-v5';
 const CORE = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
