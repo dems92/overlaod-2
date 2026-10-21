@@ -29,3 +29,11 @@ Les séances restent enregistrées sur le téléphone. Exporte une sauvegarde de
 - **Salles** : Fitness Park, On Air, Basic-Fit ou ta propre salle (Réglages → Mes salles). « Dernière fois » reprend en priorité les charges de la même salle, et les stats se filtrent par salle.
 - **Catalogue** : 459 exercices, filtrables par portion du muscle (ex. pectoraux haut / milieu / bas), par type (polyarticulaire / isolation), par matériel, avec articulations et calories estimées.
 - Les anciennes sauvegardes et les données déjà sur le téléphone restent compatibles.
+
+## Nouveautés (version 1.3)
+
+- **Compte et sauvegarde en ligne** : e-mail + mot de passe (proposé au premier lancement). Tout est sauvegardé automatiquement ; sur un autre téléphone ou un PC, il suffit de se connecter. Nécessite Upstash Redis connecté au projet Vercel (Storage).
+- **Programmes HIIT** : Tabata, Circuit HIIT force et EMOM, avec repos réglé automatiquement (10, 30 et 45 s).
+- **Bannière « Objectif de repos atteint »** en haut de l'écran.
+- **Widget** : n'affiche plus que le chrono de repos.
+- **Stats** : barres sous les onglets centrées, plus de contour blanc dans les graphiques.
