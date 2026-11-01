@@ -1387,6 +1387,7 @@ function tick(){
     const [tm,tcs]=fmtCs(Date.now()-a.startedAt);setTxt('topchrono-t',hid?'••:••':tm);setTxt('topchrono-cs',hid?'':tcs)}
   if(!a)return;
   if(a.type==='hiit'){hiitTick(a);return}
+  idleCheck(a);
   const r=$('#rest');if(r){const el=restElapsed(a);const [m,c]=fmtCs(el);setTxt('rest-m',m);setTxt('rest-cs',c);
     const p=Math.min(el/1000/restTarget(),1);const ring=$('#ringp');if(ring)ring.style.strokeDashoffset=(RING_C*(1-p)).toFixed(1);
     const box=r.closest('.stopwatch');if(box)box.classList.toggle('over',el/1000>=restTarget())}
@@ -1394,6 +1395,37 @@ function tick(){
   if(a.restRun&&S.settings.alertOn!==false&&!a.alerted&&(S.settings.alert||150)!==restTarget()&&restElapsed(a)>=(S.settings.alert||150)*1000){a.alerted=true;saveActive();restAlert(fmtDur(S.settings.alert||150)+' de repos','C’est le moment de reprendre la série.')}
 }
 function tickAll(){tick();miniTick()}
+
+/* ───────── Séance oubliée : 20 min sans série validée → « Toujours là ? » 5 min → arrêt ───────── */
+const IDLE_MS=20*6e4,IDLE_GRACE=5*6e4;let idleCtx=null;
+function idleCheck(a){
+  if(!a.lastAct){a.lastAct=Date.now();saveActive();return}
+  if(idleCtx&&!document.body.contains(idleCtx.wrap)){idleCtx=null;a.lastAct=Date.now();saveActive();return}// fenêtre fermée à la main : on continue
+  const t=Date.now()-a.lastAct;
+  if(t>=IDLE_MS+IDLE_GRACE){idleEnd(a);return}
+  if(t>=IDLE_MS&&!idleCtx)idleAsk();
+  if(idleCtx){const s=Math.max(0,Math.ceil((IDLE_MS+IDLE_GRACE-t)/1000));setTxt('idle-left',Math.floor(s/60)+':'+pad(s%60))}
+}
+function idleAsk(){
+  restAlert('Toujours là ?','Aucune série validée depuis 20 min : ta séance s’arrêtera dans 5 min.');
+  openSheet({title:'Toujours là ?',tall:false,left:null,build(ctx){idleCtx=ctx;
+    ctx.body.innerHTML=`<p class="sub" style="text-align:center;margin:12px 8px 6px">Aucune série validée depuis 20 minutes. Veux-tu arrêter ta séance ?</p>
+      <p style="text-align:center;font-size:2rem;font-weight:700;margin:6px 0 4px" id="idle-left">5:00</p>
+      <p class="s" style="text-align:center;margin:0 8px 20px">Sans réponse, la séance s’arrête et s’enregistre à l’heure de ta dernière série.</p>
+      <button class="btn primary block" data-c>Non, je continue</button><button class="txt muted" style="width:100%;margin-top:6px" data-e>Oui, terminer ma séance</button>`;
+    ctx.body.querySelector('[data-c]').onclick=()=>{idleCtx=null;if(S.active){S.active.lastAct=Date.now();saveActive()}ctx.close()};
+    ctx.body.querySelector('[data-e]').onclick=()=>{if(S.active)idleEnd(S.active)};
+  }});
+}
+function idleEnd(a){
+  idleCtx=null;[...sheetStack].forEach(c=>c.close());
+  // fin = dernière série + un temps de repos, pour ne pas compter le temps d'oubli
+  const end=Math.min(Date.now(),a.lastAct+Math.max(60,restTarget())*1000),rec=buildRecord(end);
+  S.active=null;saveActive();Push.cancel();
+  if(!rec.exercises.length){paint();toast('Séance arrêtée : aucune série validée');return}
+  pushSession(rec).then(()=>{Push.sync().catch(()=>{});S.ui.calSel=dayKey(rec.startedAt);paint()});
+  toast('Séance terminée automatiquement et enregistrée');
+}
 /* (la boucle d'horloge démarre en bas, une fois tout déclaré) */
 
 /* ───────── Pop-up d'alerte de repos (2 min 30 par défaut) ───────── */
@@ -1643,7 +1675,7 @@ function trainAction(act,d){
   }
   saveActive();paint();
 }
-function startRest(a){if(a.restStart){const r=Math.round(restElapsed(a)/1000);if(r>=5&&r<=900)(a.rests||(a.rests=[])).push(r)}a.restRun=true;a.restAcc=0;a.restStart=Date.now();a.alerted=false;a.targetHit=false;Push.planRest(0)}
+function startRest(a){a.lastAct=Date.now();if(a.restStart){const r=Math.round(restElapsed(a)/1000);if(r>=5&&r<=900)(a.rests||(a.rests=[])).push(r)}a.restRun=true;a.restAcc=0;a.restStart=Date.now();a.alerted=false;a.targetHit=false;Push.planRest(0)}
 function restMain(a){if(a.restRun){a.restAcc=restElapsed(a);a.restRun=false;Push.cancel()}else{a.restRun=true;a.restStart=Date.now();Push.planRest(a.restAcc/1000)}}
 function openGymPicker(cur,onPick){
   openSheet({title:'Salle de sport',tall:false,left:'Annuler',build(ctx){
@@ -1662,7 +1694,7 @@ function openFinish(){
     const b=ctx.body.querySelector('[data-save]');if(b)b.onclick=async()=>{const r=buildRecord();S.active=null;saveActive();Push.cancel();ctx.close();await pushSession(r);Push.sync().catch(()=>{});S.ui.calSel=dayKey(r.startedAt);paint();toast('Séance enregistrée');};
   }});
 }
-function buildRecord(){const a=S.active,end=Date.now();
+function buildRecord(endAt){const a=S.active,end=endAt||Date.now();
   return{id:a.id,...(a.rests&&a.rests.length?{rests:a.rests.slice(0,120),restT:restTarget()}:{}),tplId:a.tplId||null,name:a.name,...(a.gym?{gym:a.gym}:{}),startedAt:a.startedAt,endedAt:end,bw:bwOf(),tempo:tempoOf(),duration:Math.round((end-a.startedAt)/1000),
     exercises:a.exercises.map(e=>{const reps=[],ws=[],bisSets=[];
       e.setsData.forEach(st=>{if(st.done){reps.push(st.reps);ws.push(st.w!=null?st.w:e.weight)}
