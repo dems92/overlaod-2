@@ -509,6 +509,20 @@ a.btn.primary{color:#fff}
 .vid-q{display:flex;gap:8px}
 .vid-q .btn{height:44px;padding:0 16px;flex:none}
 .vid-credit{font-size:.6875rem;color:var(--label-3);text-align:center;text-decoration:none}
+/* ===== Import IA ===== */
+.ai-card{display:flex;align-items:center;gap:14px;width:100%;text-align:left;margin:0 0 4px}
+.ai-card .thumb{color:var(--accent)}
+.ai-in{width:100%;min-height:150px;resize:vertical;background:var(--fill);border:1px solid var(--separator);border-radius:14px;padding:12px 14px;font:inherit;font-size:1rem;color:var(--label);line-height:1.4}
+.ai-in:focus{outline:none;border-color:var(--accent)}
+.ai-shots{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0}
+.ai-shots div{position:relative;width:64px;height:64px;border-radius:12px;overflow:hidden;border:1px solid var(--separator)}
+.ai-shots img{width:100%;height:100%;object-fit:cover;display:block}
+.ai-shots button{position:absolute;top:2px;right:2px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.7);color:#fff;font-size:.8rem;line-height:22px;text-align:center}
+.ai-wait{display:flex;flex-direction:column;align-items:center;gap:14px;padding:40px 10px;text-align:center}
+.ai-spin{width:34px;height:34px;border-radius:50%;border:3px solid var(--fill-2);border-top-color:var(--accent);animation:aispin .8s linear infinite}
+@keyframes aispin{to{transform:rotate(360deg)}}
+.ai-orig{font-size:.75rem;color:var(--label-3);margin-top:2px}
+.badge.new{background:var(--fill-2);color:var(--label)}
 </style>
 </head>
 <body>
@@ -1479,7 +1493,7 @@ function lastPerf(name,gym){const pick=s=>s.exercises.find(x=>x.name===name&&!x.
   if(e){const bs=e.bisSets||[];const mw=exWeights(e).filter((_,i)=>!bs.includes(i));const varied=mw.some(w=>w!==mw[0]);return{weight:mw.length?mw[0]:e.weight,weights:varied?mw:null,reps:e.reps,gym:src.gym||null}}
   const b=BASE[name];return b?{weight:b.w,reps:[b.r],base:true}:null}
 function mkEx(it){return{id:uid8(),name:it.name,group:it.group||groupOf(it.name),eq:it.eq||'',sets:3,reps:(BASE[it.name]||{}).r||10}}
-function liveEx(e,gym){const prev=lastPerf(e.name,gym);const vary=!!(prev&&prev.weights);
+function liveEx(e,gym){let prev=lastPerf(e.name,gym);if(e.w&&(!prev||prev.base))prev={weight:e.w,weights:e.ws||null,reps:[e.reps],base:true,imp:true};const vary=!!(prev&&prev.weights);
   return{id:e.id||uid8(),name:e.name,group:e.group,sets:e.sets,reps:e.reps,weight:prev?prev.weight:0,perSet:vary,prev,
     setsData:Array.from({length:e.sets},(_,j)=>{const x={reps:e.reps,done:false};if(vary){const pw=prev.weights[Math.min(j,prev.weights.length-1)];if(pw!==prev.weight)x.w=pw}return x})}}
 function startSession(tpl){
@@ -1513,7 +1527,7 @@ function exCard(e,i,open,total){
   const n=allList(e).length,done=doneList(e).length;
   const pw=e.prev?(e.prev.weights?e.prev.weights.map(w=>fmtN(w)).join(' / '):fmtN(e.prev.weight)):'';
   const other=e.prev&&!e.prev.base&&S.active&&S.active.gym&&e.prev.gym!==S.active.gym?` (${e.prev.gym||'autre salle'})`:'';
-  const prev=e.prev?(e.prev.base?`Poids de base : ${fmtN(e.prev.weight)} kg × ${e.prev.reps[0]}`:`Dernière fois${other} : ${pw} kg · ${e.prev.reps.join(' / ')}`):'Première fois';
+  const prev=e.prev?(e.prev.base?`${e.prev.imp?'Poids importé':'Poids de base'} : ${fmtN(e.prev.weight)} kg × ${e.prev.reps[0]}`:`Dernière fois${other} : ${pw} kg · ${e.prev.reps.join(' / ')}`):'Première fois';
   const kc=kcalFor(e.name,sum((done?doneList(e):allList(e)).map(x=>x.r)));
   const fav=isFav(e.name);
   let body='';
@@ -1975,7 +1989,8 @@ function openCatalog({title,onAdd,onClose}){
 function renderPlan(){
   const el=$('#s-plan');
   el.innerHTML=`<div class="col"><div class="titlerow"><h1 class="large">Programme</h1><button class="icon-btn accent" data-a="new" aria-label="Nouvelle séance">${I.plus}</button></div>
-    <div class="sec" style="margin-top:0">Mes séances</div>
+    <button class="card ai-card" data-a="ai-import"><span class="thumb">${I.plus}</span><div class="grow"><div class="t" style="font-weight:600">Importer mes séances avec l’IA</div><div class="s">Colle ta note ou ajoute des captures : exercices, séries, reps et poids sont repris</div></div>${I.chev}</button>
+    <div class="sec">Mes séances</div>
     ${S.templates.length?`<div class="group">${S.templates.map(t=>`<button class="row" data-a="edit" data-id="${t.id}"><span class="thumb">${I.dumb}</span><div class="grow"><div class="t">${esc(t.name)}</div><div class="s">${t.exercises.length} exercice${t.exercises.length>1?'s':''} · ${sum(t.exercises.map(e=>e.sets))} séries${t.rest?' · repos '+t.rest+' s':''}${t.exercises.length?' · '+esc(t.exercises.slice(0,2).map(e=>e.name).join(', '))+(t.exercises.length>2?'…':''):''}</div></div>${I.chev}</button>`).join('')}</div>`
     :`<div class="card empty"><b>Aucune séance</b>Crée ta séance ou pars d’un modèle ci-dessous.<br><br><button class="btn primary" data-a="new">Créer une séance</button></div>`}
     <div class="sec">Séances types</div>
@@ -1993,7 +2008,7 @@ function openEditor(id){
     const valid=()=>draft.name.trim()&&draft.exercises.length;
     const draw=()=>{
       ctx.setRight('Enregistrer',()=>{draft.name=draft.name.trim();draft.upd=Date.now();const i=S.templates.findIndex(t=>t.id===draft.id);if(i>=0)S.templates[i]=draft;else S.templates.push(draft);saveApp();ctx.close();paint();toast('Séance enregistrée')},!valid());
-      const rows=draft.exercises.map((e,i)=>`<div class="row" style="flex-wrap:wrap;gap:8px 12px"><div class="grow" style="flex-basis:60%"><div class="t">${esc(e.name)}</div><div class="s">${esc(e.group||'')}</div></div>${i>0?`<button class="icon-btn" style="width:36px;height:36px" data-a="up" data-i="${i}" aria-label="Monter">${I.up}</button>`:''}<button class="txt muted" data-a="del" data-i="${i}" style="padding:0 6px;min-height:36px">Retirer</button>
+      const rows=draft.exercises.map((e,i)=>`<div class="row" style="flex-wrap:wrap;gap:8px 12px"><div class="grow" style="flex-basis:60%"><div class="t">${esc(e.name)}</div><div class="s">${esc(e.group||'')}${e.w?' · '+(e.ws?e.ws.map(w=>fmtN(w)).join(' / '):fmtN(e.w))+' kg':''}</div></div>${i>0?`<button class="icon-btn" style="width:36px;height:36px" data-a="up" data-i="${i}" aria-label="Monter">${I.up}</button>`:''}<button class="txt muted" data-a="del" data-i="${i}" style="padding:0 6px;min-height:36px">Retirer</button>
         <div style="display:flex;gap:18px;width:100%;justify-content:space-between"><div class="mini-step"><span class="s">Séries</span><button data-a="s-" data-i="${i}" aria-label="Moins de séries">−</button><b>${e.sets}</b><button data-a="s+" data-i="${i}" aria-label="Plus de séries">+</button></div><div class="mini-step"><span class="s">Reps</span><button data-a="r-" data-i="${i}" aria-label="Moins de répétitions">−</button><b>${e.reps}</b><button data-a="r+" data-i="${i}" aria-label="Plus de répétitions">+</button></div></div></div>`).join('');
       ctx.body.innerHTML=`<div class="group"><label class="field"><input data-name value="${esc(draft.name)}" placeholder="Nom : Séance 2, Dos, Push…" maxlength="40" aria-label="Nom de la séance" ${draft.name?'':'data-autofocus'}></label></div>
         <div class="sec">Exercices</div>${draft.exercises.length?`<div class="group">${rows}</div>`:''}
@@ -2013,6 +2028,70 @@ function openEditor(id){
   }});
 }
 
+/* ───────── Import IA : note ou captures → séances ───────── */
+/* réduit une capture (le serveur accepte 4,5 Mo par envoi) */
+function shrinkImage(file,max=1600){return new Promise((ok,ko)=>{const u=URL.createObjectURL(file),im=new Image();
+  im.onload=()=>{const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);
+    c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);ok(c.toDataURL('image/jpeg',.85))};
+  im.onerror=()=>{URL.revokeObjectURL(u);ko(new Error('image'))};im.src=u})}
+function aiCatalog(){const o={};for(const c of CATALOG)(o[c.group]||(o[c.group]=[])).push(c.name);for(const g of GROUPS)o[g]=o[g]||[];return o}
+function openAiImport(){
+  const st={text:'',shots:[],res:null,busy:false,pick:[]};
+  openSheet({title:'Importer mes séances',left:'Fermer',build(ctx){
+    const kgTxt=e=>e.weight?' · '+(e.weights?e.weights.map(w=>fmtN(w)).join(' / '):fmtN(e.weight))+' kg':'';
+    const draw=()=>{
+      if(st.busy){ctx.setRight(null);ctx.body.innerHTML='<div class="ai-wait"><div class="ai-spin"></div><b>Analyse en cours…</b><p class="s">L’IA lit ta note et relie chaque exercice à ton catalogue. Compte 10 à 40 secondes.</p></div>';return}
+      if(st.res){const n=st.pick.filter(Boolean).length;
+        ctx.setRight(n?'Ajouter':null,save,!n);
+        ctx.body.innerHTML=(st.res.message?`<p class="sub" style="margin:4px 4px 14px">${esc(st.res.message)}</p>`:'')+
+          (st.res.sessions.length?st.res.sessions.map((s,k)=>`<button class="row" data-pick="${k}" style="margin-top:${k?18:0}px;padding-left:4px"><span class="radio${st.pick[k]?' on':''}"></span><div class="grow"><div class="t" style="font-weight:600">${esc(s.name)}</div><div class="s">${s.exercises.length} exercice${s.exercises.length>1?'s':''} · ${sum(s.exercises.map(e=>e.sets))} séries${s.rest?' · repos '+fmtDur(s.rest):''}</div></div></button>
+            <div class="group">${s.exercises.map(e=>`<div class="row"><div class="grow"><div class="t">${esc(e.name)}</div><div class="s">${e.sets} × ${e.reps}${kgTxt(e)} · ${esc(e.group)}</div>${e.original&&norm(e.original)!==norm(e.name)?`<div class="ai-orig">« ${esc(e.original)} »${e.note?' · '+esc(e.note):''}</div>`:e.note?`<div class="ai-orig">${esc(e.note)}</div>`:''}</div>${e.linked?'':'<span class="badge new">Nouveau</span>'}</div>`).join('')}</div>`).join('')
+            +'<p class="s" style="margin:12px 4px 0">« Nouveau » : l’exercice n’existe pas dans le catalogue, il sera créé. Tu pourras tout ajuster ensuite dans Programme.</p>':'')
+          +'<button class="btn secondary block" data-a="again" style="margin-top:18px">Recommencer</button>';
+        return}
+      ctx.setRight('Analyser',run,!(st.text.trim()||st.shots.length));
+      ctx.body.innerHTML=`<p class="sub" style="margin:4px 4px 14px">Colle ta note de séance ou ajoute des captures d’écran (autre app, carnet, tableau). L’IA reconnaît les exercices, les séries, les répétitions et les poids.</p>
+        <textarea class="ai-in" placeholder="Ex. : Pecs&#10;DC 4x8 80kg&#10;Incliné haltères 3x10 30kg&#10;Écarté poulie 3x12 15kg&#10;Dips 3x max" aria-label="Note de séance">${esc(st.text)}</textarea>
+        <div class="ai-shots">${st.shots.map((u,i)=>`<div><img src="${u}" alt="Capture ${i+1}"><button data-rm="${i}" aria-label="Retirer la capture">×</button></div>`).join('')}</div>
+        ${st.shots.length<4?'<button class="add-row" data-a="shot" style="margin-top:10px">'+I.plus+'<span>Ajouter une capture d’écran</span></button>':''}
+        <input type="file" accept="image/*" multiple hidden data-file>
+        <button class="btn primary block" data-a="run" style="margin-top:18px"${st.text.trim()||st.shots.length?'':' disabled'}>Analyser avec l’IA</button>`;
+    };
+    async function run(){
+      if(st.busy||!(st.text.trim()||st.shots.length))return;
+      st.busy=true;draw();
+      try{
+        const r=await fetch('/api/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:st.text,images:st.shots,catalog:aiCatalog()})});
+        const j=await r.json().catch(()=>({}));
+        if(!r.ok)throw new Error(j.error||'Erreur '+r.status);
+        st.res=j;st.pick=j.sessions.map(()=>true);
+      }catch(e){toast(/Failed to fetch|NetworkError|Load failed/.test(e.message)?'Impossible de joindre le serveur':e.message.slice(0,90))}
+      st.busy=false;draw();
+    }
+    function save(){
+      const L=S.settings.customEx||(S.settings.customEx=[]);let made=0,n=0;
+      st.res.sessions.forEach((s,k)=>{if(!st.pick[k])return;
+        const t={id:uid8(),upd:Date.now(),...(s.rest?{rest:s.rest}:{}),name:s.name,exercises:[]};
+        for(const e of s.exercises){
+          let it=CATALOG.find(c=>c.name===e.name)||CATALOG.find(c=>norm(c.name)===norm(e.name));
+          if(!it){L.push({name:e.name,group:GROUPS.includes(e.group)?e.group:'Autre',code:'au'});syncCustom();made++;it=CATALOG.find(c=>c.name===e.name)}
+          t.exercises.push({id:uid8(),name:it?it.name:e.name,group:it?it.group:e.group,eq:it?it.eq:'',sets:e.sets,reps:e.reps,...(e.weight?{w:e.weight}:{}),...(e.weights?{ws:e.weights}:{})});
+        }
+        S.templates.push(t);n++});
+      saveApp();ctx.close();go('plan');toast(n+' séance'+(n>1?'s':'')+' importée'+(n>1?'s':'')+(made?' · '+made+' exercice'+(made>1?'s':'')+' créé'+(made>1?'s':''):''));
+    }
+    ctx.body.oninput=e=>{if(e.target.matches('.ai-in')){st.text=e.target.value;const ok=!!(st.text.trim()||st.shots.length);ctx.setRight('Analyser',run,!ok);const b=ctx.body.querySelector('[data-a="run"]');if(b)b.disabled=!ok}};
+    ctx.body.onchange=async e=>{if(!e.target.matches('[data-file]'))return;
+      for(const f of [...e.target.files].slice(0,4-st.shots.length)){try{st.shots.push(await shrinkImage(f))}catch(_){toast('Image illisible')}}draw()};
+    ctx.body.onclick=e=>{const b=e.target.closest('[data-a],[data-rm],[data-pick]');if(!b)return;
+      if(b.dataset.rm!==undefined){st.shots.splice(+b.dataset.rm,1);draw()}
+      else if(b.dataset.pick!==undefined){st.pick[+b.dataset.pick]=!st.pick[+b.dataset.pick];draw()}
+      else if(b.dataset.a==='shot')ctx.body.querySelector('[data-file]').click();
+      else if(b.dataset.a==='run')run();
+      else if(b.dataset.a==='again'){st.res=null;draw()}};
+    draw();
+  }});
+}
 function libTemplate(day,prefix,rest){return{id:uid8(),upd:Date.now(),...(rest?{rest}:{}),name:prefix?prefix+' · '+day.name:day.name,exercises:day.ex.map(([n,st,r])=>({id:uid8(),name:n,group:groupOf(n),eq:'',sets:st,reps:r}))}}
 function openLib(one,prog){
   const days=one?[one]:prog.days;
@@ -2220,7 +2299,7 @@ app.addEventListener('click',e=>{
   const b=e.target.closest('[data-a]');if(!b||b.closest('.tabbar'))return;
   const a=b.dataset.a,d=b.dataset;
   if(S.tab==='train')return trainAction(a,d);
-  if(S.tab==='plan'){if(a==='new')openEditor(null);else if(a==='edit')openEditor(d.id);else if(a==='lib-s')openLib(LIB_S[+d.k],null);else if(a==='lib-p')openLib(null,LIB_P[+d.k]);else if(a==='h-open')openHiit(d.id);else if(a==='h-new')openHiitEditor(null,null);return}
+  if(S.tab==='plan'){if(a==='ai-import')openAiImport();else if(a==='new')openEditor(null);else if(a==='edit')openEditor(d.id);else if(a==='lib-s')openLib(LIB_S[+d.k],null);else if(a==='lib-p')openLib(null,LIB_P[+d.k]);else if(a==='h-open')openHiit(d.id);else if(a==='h-new')openHiitEditor(null,null);return}
   if(S.tab==='cal'){
     if(a==='day'){S.ui.calSel=d.k;paint()}
     else if(a==='prev'||a==='next'){const n=new Date(S.ui.calY,S.ui.calM+(a==='next'?1:-1),1);S.ui.calY=n.getFullYear();S.ui.calM=n.getMonth();paint()}

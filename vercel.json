@@ -1,9 +1,37 @@
 {
   "headers": [
-    { "source": "/sw.js", "headers": [ { "key": "Cache-Control", "value": "no-cache" }, { "key": "Service-Worker-Allowed", "value": "/" } ] },
-    { "source": "/manifest.webmanifest", "headers": [ { "key": "Content-Type", "value": "application/manifest+json" } ] }
+    {
+      "source": "/sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        }
+      ]
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/manifest+json"
+        }
+      ]
+    }
   ],
   "crons": [
-    { "path": "/api/cron", "schedule": "0 16 * * *" }
-  ]
+    {
+      "path": "/api/cron",
+      "schedule": "0 16 * * *"
+    }
+  ],
+  "functions": {
+    "api/import.js": {
+      "maxDuration": 60
+    }
+  }
 }
