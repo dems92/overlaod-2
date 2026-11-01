@@ -2,7 +2,10 @@
 const L = require('./_lib');
 const A = require('./_acct');
 
-module.exports = A.route(['POST'], async (req, res) => {
+// /api/ev (statistiques d'usage) passe par cette fonction : le plan gratuit de Vercel limite à 12 fonctions
+const ev = require('./_ev');
+module.exports = (req, res) => (req.query && req.query.ev ? ev : acct)(req, res);
+const acct = A.route(['POST'], async (req, res) => {
   const b = req.body || {};
   const redis = L.getRedis();
   if (b.action === 'logout') { await A.dropToken(req); return res.json({ ok: true }); }

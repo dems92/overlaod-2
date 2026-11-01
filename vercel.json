@@ -33,5 +33,11 @@
     "api/import.js": {
       "maxDuration": 60
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api/ev",
+      "destination": "/api/account?ev=1"
+    }
+  ]
 }
