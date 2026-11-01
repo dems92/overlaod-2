@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 const L = require('./_lib');
 
-const API = 'https://generativelanguage.googleapis.com/v1beta/interactions';
+const API = 'https://generativelanguage.googleapis.com/v1beta/models';
 const MODELS = [process.env.GEMINI_MODEL || 'gemini-3.8-flash', 'gemini-3.5-flash-lite'];
 const MAX_IMAGES = 4, MAX_IMAGE = 2.5e6, MAX_TEXT = 12000;
 
@@ -97,34 +97,49 @@ module.exports = L.route('POST', async (req, res) => {
   if (n === 1) await redis.expire(dk, 2 * 864e2);
   if (n > 400) return res.status(429).json({ error: 'Limite du jour atteinte, réessaie demain' });
 
-  const body = model => JSON.stringify({
-    model,
-    system_instruction: `${SYSTEM}\n\nGroupes musculaires possibles : ${groups.join(', ')}.\n\nCatalogue des exercices de l'utilisateur :\n\n${catText}`,
-    input: [
-      ...images.map(m => ({ type: 'image', data: m[2], mime_type: m[1] })),
-      { type: 'text', text: text ? `Voici ma note :\n\n${text}` : 'Voici mes captures d’écran.' }
-    ],
-    generation_config: { thinking_level: 'low', max_output_tokens: 16000 },
-    response_format: { type: 'text', mime_type: 'application/json', schema: schema(groups) }
+  // generateContent : réponse directe ; schéma JSON complet, sinon le format OpenAPI plus ancien
+  const sch = schema(groups);
+  const body = (lite) => JSON.stringify({
+    systemInstruction: { parts: [{ text: `${SYSTEM}\n\nGroupes musculaires possibles : ${groups.join(', ')}.\n\nCatalogue des exercices de l'utilisateur :\n\n${catText}` }] },
+    contents: [{ role: 'user', parts: [
+      ...images.map(m => ({ inlineData: { mimeType: m[1], data: m[2] } })),
+      { text: text ? `Voici ma note :\n\n${text}` : 'Voici mes captures d’écran.' }
+    ] }],
+    generationConfig: { maxOutputTokens: 16000, responseMimeType: 'application/json',
+      ...(lite ? { responseSchema: JSON.parse(JSON.stringify(sch, (k, v) => k === 'additionalProperties' ? undefined : v)) } : { responseJsonSchema: sch }) }
   });
-  // modèle principal, puis un modèle plus léger si le premier est saturé (offre gratuite)
-  let r, j = {};
-  for (const model of MODELS) {
-    r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, body: body(model) });
-    j = await r.json().catch(() => ({}));
-    if (r.ok || ![429, 500, 503].includes(r.status)) break;
+  const t0 = Date.now();
+  let r = null, j = {}, why = '';
+  // modèle principal, puis un modèle plus léger si le premier est saturé ou trop lent ; 55 s au total
+  outer: for (const model of MODELS) {
+    for (const lite of [false, true]) {
+      const left = 55000 - (Date.now() - t0);
+      if (left < 5000) break outer;
+      try {
+        r = await fetch(`${API}/${model}:generateContent`, { method: 'POST', signal: AbortSignal.timeout(Math.min(left, 40000)),
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, body: body(lite) });
+        j = await r.json().catch(() => ({}));
+      } catch (e) { r = { ok: false, status: 504 }; j = {}; }
+      why = String((j.error && j.error.message) || '').slice(0, 160);
+      console.log('gemini', model, lite ? 'responseSchema' : 'responseJsonSchema', r.status, Date.now() - t0 + 'ms', why);
+      if (r.ok) break outer;
+      if (r.status === 400 && /schema|response_?json/i.test(why) && !lite) continue; // champ de schéma non reconnu : on réessaie
+      if (![429, 500, 503, 504].includes(r.status)) break outer;
+      break; // modèle suivant
+    }
   }
-  if (!r.ok) {
-    const why = String((j.error && j.error.message) || '').slice(0, 120);
-    if (r.status === 429) return res.status(429).json({ error: 'Quota gratuit de l’IA atteint, réessaie dans un moment' });
-    if (r.status === 400 && /api key/i.test(why)) return res.status(500).json({ error: 'Clé GEMINI_API_KEY refusée' });
-    if (r.status === 401 || r.status === 403) return res.status(500).json({ error: 'Clé GEMINI_API_KEY refusée' });
-    return res.status(502).json({ error: 'IA indisponible (' + r.status + (why ? ' : ' + why : '') + ')' });
+  if (!r || !r.ok) {
+    const st = r ? r.status : 504;
+    if (st === 429) return res.status(429).json({ error: 'Quota gratuit de l’IA atteint, réessaie dans un moment' });
+    if (st === 504) return res.status(504).json({ error: 'L’IA met trop de temps à répondre, réessaie (ou envoie moins de captures)' });
+    if (st === 401 || st === 403 || (st === 400 && /api key/i.test(why))) return res.status(500).json({ error: 'Clé GEMINI_API_KEY refusée' });
+    return res.status(502).json({ error: 'IA indisponible (' + st + (why ? ' : ' + why : '') + ')' });
   }
-  if (j.status === 'incomplete') return res.status(422).json({ error: 'Note trop longue : importe-la en plusieurs fois' });
-  const step = (j.steps || []).find(s => s.type === 'model_output');
-  const raw = step ? (step.content || []).filter(c => c.type === 'text').map(c => c.text).join('') : '';
-  if (!raw) return res.status(422).json({ error: 'L’IA n’a pas pu traiter ce contenu' });
+  const cand = (j.candidates || [])[0];
+  if (!cand) return res.status(422).json({ error: 'L’IA n’a pas pu traiter ce contenu' + (j.promptFeedback && j.promptFeedback.blockReason ? ' (' + j.promptFeedback.blockReason + ')' : '') });
+  if (cand.finishReason === 'MAX_TOKENS') return res.status(422).json({ error: 'Note trop longue : importe-la en plusieurs fois' });
+  const raw = ((cand.content && cand.content.parts) || []).filter(p => p.text && !p.thought).map(p => p.text).join('');
+  if (!raw) return res.status(422).json({ error: 'L’IA n’a pas pu traiter ce contenu (' + (cand.finishReason || 'vide') + ')' });
   let out;
   try { out = JSON.parse(raw); } catch (e) { return res.status(502).json({ error: 'Réponse de l’IA illisible, réessaie' }); }
 
