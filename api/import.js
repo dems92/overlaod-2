@@ -1,10 +1,10 @@
 // Import par IA : une note ou des captures d'écran de séances → séances reliées au catalogue (exercices, séries, reps, poids)
-// Clé à mettre dans Vercel : ANTHROPIC_API_KEY
+// Clé à mettre dans Vercel : GEMINI_API_KEY (gratuite sur https://aistudio.google.com/apikey), GEMINI_MODEL en option
 const crypto = require('crypto');
-const SDK = require('@anthropic-ai/sdk');
 const L = require('./_lib');
-const Anthropic = SDK.default || SDK.Anthropic || SDK;
 
+const API = 'https://generativelanguage.googleapis.com/v1beta/interactions';
+const MODELS = [process.env.GEMINI_MODEL || 'gemini-3.8-flash', 'gemini-3.5-flash-lite'];
 const MAX_IMAGES = 4, MAX_IMAGE = 2.5e6, MAX_TEXT = 12000;
 
 const SYSTEM = `Tu convertis les notes d'entraînement de musculation d'un utilisateur (texte collé ou captures d'écran d'une autre app, d'un carnet, d'une note de téléphone, d'un tableau…) en séances pour l'application Overload.
@@ -72,7 +72,7 @@ const clamp = (n, a, b, d) => { n = Number(n); return Number.isFinite(n) ? Math.
 const kg = n => Math.round(clamp(n, 0, 1000, 0) * 2) / 2;
 
 module.exports = L.route('POST', async (req, res) => {
-  if (!process.env.ANTHROPIC_API_KEY) return res.status(501).json({ error: 'L’import IA n’est pas encore activé sur le serveur (clé ANTHROPIC_API_KEY manquante)' });
+  if (!process.env.GEMINI_API_KEY) return res.status(501).json({ error: 'L’import IA n’est pas encore activé sur le serveur (clé GEMINI_API_KEY manquante)' });
   const b = req.body || {};
   const text = typeof b.text === 'string' ? b.text.slice(0, MAX_TEXT).trim() : '';
   const images = (Array.isArray(b.images) ? b.images : []).slice(0, MAX_IMAGES)
@@ -97,37 +97,36 @@ module.exports = L.route('POST', async (req, res) => {
   if (n === 1) await redis.expire(dk, 2 * 864e2);
   if (n > 400) return res.status(429).json({ error: 'Limite du jour atteinte, réessaie demain' });
 
-  const content = [
-    ...images.map(m => ({ type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } })),
-    { type: 'text', text: text ? `Voici ma note :\n\n${text}` : 'Voici mes captures d’écran.' }
-  ];
-  const client = new Anthropic();
-  let msg;
-  try {
-    msg = await client.beta.messages.create({
-      model: 'claude-opus-5-5',
-      max_tokens: 16000,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
-      output_config: { effort: 'medium', format: { type: 'json_schema', schema: schema(groups) } },
-      system: [
-        { type: 'text', text: SYSTEM },
-        { type: 'text', text: `Groupes musculaires possibles : ${groups.join(', ')}.\n\nCatalogue des exercices de l'utilisateur :\n\n${catText}`, cache_control: { type: 'ephemeral' } }
-      ],
-      messages: [{ role: 'user', content }]
-    });
-  } catch (e) {
-    if (e instanceof Anthropic.RateLimitError) return res.status(429).json({ error: 'L’IA est très demandée, réessaie dans un instant' });
-    if (e instanceof Anthropic.AuthenticationError) return res.status(500).json({ error: 'Clé ANTHROPIC_API_KEY refusée' });
-    if (e instanceof Anthropic.BadRequestError) return res.status(400).json({ error: 'Demande refusée par l’IA : ' + String(e.message).slice(0, 120) });
-    if (e instanceof Anthropic.APIError) return res.status(502).json({ error: 'IA indisponible (' + e.status + ')' });
-    throw e;
+  const body = model => JSON.stringify({
+    model,
+    system_instruction: `${SYSTEM}\n\nGroupes musculaires possibles : ${groups.join(', ')}.\n\nCatalogue des exercices de l'utilisateur :\n\n${catText}`,
+    input: [
+      ...images.map(m => ({ type: 'image', data: m[2], mime_type: m[1] })),
+      { type: 'text', text: text ? `Voici ma note :\n\n${text}` : 'Voici mes captures d’écran.' }
+    ],
+    generation_config: { thinking_level: 'low', max_output_tokens: 16000 },
+    response_format: { type: 'text', mime_type: 'application/json', schema: schema(groups) }
+  });
+  // modèle principal, puis un modèle plus léger si le premier est saturé (offre gratuite)
+  let r, j = {};
+  for (const model of MODELS) {
+    r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, body: body(model) });
+    j = await r.json().catch(() => ({}));
+    if (r.ok || ![429, 500, 503].includes(r.status)) break;
   }
-  if (msg.stop_reason === 'refusal') return res.status(422).json({ error: 'L’IA n’a pas pu traiter ce contenu' });
-  if (msg.stop_reason === 'max_tokens') return res.status(422).json({ error: 'Note trop longue : importe-la en plusieurs fois' });
-  const block = msg.content.find(x => x.type === 'text');
+  if (!r.ok) {
+    const why = String((j.error && j.error.message) || '').slice(0, 120);
+    if (r.status === 429) return res.status(429).json({ error: 'Quota gratuit de l’IA atteint, réessaie dans un moment' });
+    if (r.status === 400 && /api key/i.test(why)) return res.status(500).json({ error: 'Clé GEMINI_API_KEY refusée' });
+    if (r.status === 401 || r.status === 403) return res.status(500).json({ error: 'Clé GEMINI_API_KEY refusée' });
+    return res.status(502).json({ error: 'IA indisponible (' + r.status + (why ? ' : ' + why : '') + ')' });
+  }
+  if (j.status === 'incomplete') return res.status(422).json({ error: 'Note trop longue : importe-la en plusieurs fois' });
+  const step = (j.steps || []).find(s => s.type === 'model_output');
+  const raw = step ? (step.content || []).filter(c => c.type === 'text').map(c => c.text).join('') : '';
+  if (!raw) return res.status(422).json({ error: 'L’IA n’a pas pu traiter ce contenu' });
   let out;
-  try { out = JSON.parse(block ? block.text : ''); } catch (e) { return res.status(502).json({ error: 'Réponse de l’IA illisible, réessaie' }); }
+  try { out = JSON.parse(raw); } catch (e) { return res.status(502).json({ error: 'Réponse de l’IA illisible, réessaie' }); }
 
   // nettoyage : seuls les noms exacts du catalogue sont reliés, le reste devient un exercice perso
   const sessions = (out.sessions || []).slice(0, 20).map(s => ({
