@@ -1,16 +1,21 @@
-// Tous les jours : rappel si aucune séance depuis X jours (appelée par Vercel Cron)
+// Tous les jours : rappel à chaque appareil sans séance depuis X jours (appelée par Vercel Cron)
 const L = require('./_lib');
 
 module.exports = L.route('GET', async (req, res, host) => {
   const redis = L.getRedis();
-  const meta = (await redis.get('overload:meta')) || {};
-  const d = Number(meta.inactiveDays) || 0;
-  if (!d || !meta.lastSessionAt) return res.json({ sent: false, reason: 'désactivé ou aucune séance' });
+  const subs = (await redis.hgetall('overload:subs')) || {}, metas = (await redis.hgetall('overload:dmeta')) || {};
   const now = Date.now(), DAY = 864e5;
-  const days = Math.floor((now - Number(meta.lastSessionAt)) / DAY);
-  const since = now - (Number(meta.lastRemindedAt) || 0);
-  if (days < d || since < d * DAY - 2 * 36e5) return res.json({ sent: false, days });
-  const out = await L.sendAll({ title: 'Overload', body: days + ' jours sans séance. On reprend ?', tag: 'inactive', url: '/' }, host);
-  await redis.set('overload:meta', { ...meta, lastRemindedAt: now });
-  res.json({ sent: true, days, ...out });
+  let sent = 0, checked = 0;
+  for (const [id, sub] of Object.entries(subs)) {
+    const meta = metas[id] || {};
+    const d = Number(meta.inactiveDays) || 0;
+    if (!d || !meta.lastSessionAt) continue;
+    checked++;
+    const days = Math.floor((now - Number(meta.lastSessionAt)) / DAY);
+    if (days < d || now - (Number(meta.lastRemindedAt) || 0) < d * DAY - 2 * 36e5) continue;
+    const out = await L.sendAll({ title: 'Overload', body: days + ' jours sans séance. On reprend ?', tag: 'inactive', url: '/' }, host, { [id]: sub });
+    sent += out.sent;
+    await redis.hset('overload:dmeta', { [id]: { ...meta, lastRemindedAt: now } });
+  }
+  res.json({ devices: Object.keys(subs).length, checked, sent });
 }, { cron: true });

@@ -2255,7 +2255,6 @@ app.addEventListener('click',e=>{
 app.addEventListener('change',e=>{
   if(e.target.id==='imp'){importFile(e.target.files[0]);e.target.value='';return}
   if(e.target.id==='gym-new'){addGym();return}
-  if(e.target.matches('.key-in')){Push.setKey(e.target.value.trim());Push.sync(true).then(()=>toast('Clé enregistrée')).catch(Push.fail);return}
   const a=S.active;if(!a)return;const t=e.target;
   if(t.matches('.pw-in')){const ex=a.exercises[+t.dataset.i];const v=parseFloat(String(t.value).replace(',','.'));setW(ex,+t.dataset.j,isFinite(v)?Math.max(0,Math.round(v*100)/100):0);saveActive();paint()}
   else if(t.matches('.bis-pw-in')){const b=a.exercises[+t.dataset.i].setsData[+t.dataset.j].bis;const v=parseFloat(String(t.value).replace(',','.'));b.w=isFinite(v)?Math.max(0,Math.round(v*100)/100):0;saveActive();paint()}
@@ -2276,15 +2275,14 @@ const standalone=()=>navigator.standalone===true||matchMedia('(display-mode: sta
 const urlB64=str=>{const raw=atob((str+'='.repeat((4-str.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(raw,c=>c.charCodeAt(0))};
 const Push={
   on:false,jobs:[],seq:0,
-  key(){try{return localStorage.getItem('overload.key')||''}catch(e){return ''}},
-  setKey(v){try{localStorage.setItem('overload.key',v)}catch(e){}},
+  ep:null,
   async api(path,body){
-    const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json','x-overload-key':Push.key()},body:JSON.stringify(body||{})});
+    const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...(body||{}),endpoint:Push.ep})});
     if(!r.ok){const j=await r.json().catch(()=>({}));const e=new Error(j.error||String(r.status));e.status=r.status;throw e}
     return r.json().catch(()=>({}));
   },
   meta(){return{inactiveDays:S.settings.inactiveDays??3,restPush:S.settings.restPush!==false,alertPush:S.settings.alertOn!==false,lastSessionAt:S.sessions[0]?S.sessions[0].startedAt:null}},
-  async sync(force){if(!WEB||(!Push.on&&!force))return;await Push.api('meta',Push.meta())},
+  async sync(){if(!WEB||!Push.on||!Push.ep)return;await Push.api('meta',Push.meta())},
   /* programme la fin de repos et l'alerte (2 min 30 par défaut), acc = secondes déjà écoulées */
   async planRest(acc){
     await Push.cancel();const my=Push.seq;
@@ -2297,31 +2295,30 @@ const Push={
       if(j.id)Push.jobs.push(j.id)}catch(e){}}
   },
   async cancel(){Push.seq++;const ids=Push.jobs;Push.jobs=[];if(WEB&&Push.on)for(const id of ids){try{await Push.api('rest-cancel',{id})}catch(e){}}},
-  fail(e){toast(e&&e.status===401?'Clé incorrecte':e&&e.message&&e.status===500?'Serveur : '+e.message.slice(0,60):'Impossible de joindre le serveur')},
+  fail(e){toast(e&&e.status===401?'Réactive les notifications':e&&e.message&&e.status===500?'Serveur : '+e.message.slice(0,60):'Impossible de joindre le serveur')},
   async enable(){
     if(!canPush()){toast(isIOS?'Ajoute d’abord l’app à l’écran d’accueil':'Navigateur non compatible');return}
     if(isIOS&&!standalone()){toast('Ouvre l’app depuis son icône d’écran d’accueil');return}
-    if(!Push.key()){toast('Colle d’abord ta clé d’accès');return}
     try{
-      await Push.sync(true);
       const perm=await Notification.requestPermission();
       if(perm!=='granted'){toast('Autorise les notifications dans les réglages de l’iPhone');return}
       const reg=await navigator.serviceWorker.ready;
       const sub=(await reg.pushManager.getSubscription())||await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64(VAPID_PUBLIC)});
-      await Push.api('subscribe',{subscription:sub.toJSON()});
+      Push.ep=sub.endpoint;
+      await Push.api('subscribe',{subscription:sub.toJSON(),meta:Push.meta()});
       Push.on=true;await Push.sync();toast('Notifications activées');
     }catch(e){Push.fail(e)}
   },
   async disable(){
     try{const reg=await navigator.serviceWorker.ready;const sub=await reg.pushManager.getSubscription();
-      if(sub){try{await Push.api('unsubscribe',{endpoint:sub.endpoint})}catch(e){}await sub.unsubscribe()}}catch(e){}
-    Push.on=false;toast('Notifications désactivées');
+      if(sub){try{await Push.api('unsubscribe')}catch(e){}await sub.unsubscribe()}}catch(e){}
+    Push.on=false;Push.ep=null;toast('Notifications désactivées');
   },
   init(){
     if(!WEB||!canPush())return;
     navigator.serviceWorker.ready.then(r=>r.pushManager.getSubscription()).then(sub=>{
-      Push.on=!!sub&&Notification.permission==='granted';
-      if(Push.on)Push.sync().catch(()=>{});
+      Push.on=!!sub&&Notification.permission==='granted';Push.ep=Push.on?sub.endpoint:null;
+      if(Push.on)Push.api('subscribe',{subscription:sub.toJSON(),meta:Push.meta()}).catch(()=>{});
       if(S.tab==='set')paint();
     }).catch(()=>{});
   }
@@ -2331,8 +2328,6 @@ function notifBlock(){
   const can=canPush(),days=S.settings.inactiveDays??3;
   const help=!can?`<div class="row"><div class="grow"><div class="t">Ajoute Overload à l’écran d’accueil</div><div class="s">${isIOS?'Safari → Partager → Sur l’écran d’accueil, puis ouvre l’app depuis son icône : les notifications ne marchent que comme ça.':'Ce navigateur ne gère pas les notifications.'}</div></div></div>`:'';
   return `<div class="sec">Notifications</div><div class="group">${help}
-    <div class="row"><div class="grow"><div class="t">Clé d’accès</div><div class="s">La valeur OVERLOAD_KEY définie dans Vercel</div></div></div>
-    <div class="row" style="padding-top:0"><input class="key-in" type="password" value="${esc(Push.key())}" placeholder="Colle ta clé ici" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Clé d’accès"></div>
     ${can?`<button class="row" data-a="notif-toggle"><div class="grow"><div class="t" style="color:var(--accent)">${Push.on?'Désactiver les notifications':'Activer les notifications'}</div><div class="s">${Push.on?'Activées sur cet appareil':'L’iPhone te demandera l’autorisation'}</div></div></button>`:''}
     <div class="row"><div class="grow"><div class="t">Fin du temps de repos</div><div class="s">Alerte quand le repos atteint ton objectif</div></div><button class="sw" role="switch" aria-checked="${S.settings.restPush!==false}" data-a="rp-toggle" aria-label="Notification de fin de repos"></button></div>
     <div class="row"><div class="grow"><div class="t">Rappel d’inactivité</div><div class="s">Prévenu après ${days?days+' jour'+(days>1?'s':''):'X jours'} sans séance</div></div><div class="mini-step"><button data-a="inact-" aria-label="Moins un jour">−</button><b style="min-width:3.4ch">${days?days+' j':'Off'}</b><button data-a="inact+" aria-label="Plus un jour">+</button></div></div>

@@ -11,4 +11,4 @@ module.exports = L.route('POST', async (req, res) => {
     }).catch(() => {});
   }
   res.json({ ok: true });
-});
+}, { device: true });

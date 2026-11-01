@@ -30,7 +30,7 @@ L.getPush = (host) => {
   return wp;
 };
 
-// Accès protégé par la clé OVERLOAD_KEY
+// Accès réservé au serveur (QStash) : clé OVERLOAD_KEY, jamais envoyée au téléphone
 L.authed = (req) => {
   const k = process.env.OVERLOAD_KEY;
   return !!k && safeEq(req.headers['x-overload-key'] || '', k);
@@ -41,10 +41,29 @@ L.bearer = (req) => {
   return !!s && safeEq(req.headers.authorization || '', 'Bearer ' + s);
 };
 
-L.sendAll = async (payload, host) => {
+// Identifiant d'un appareil : empreinte de son adresse d'abonnement (connue de lui seul)
+L.devId = endpoint => crypto.createHash('sha1').update(String(endpoint)).digest('hex');
+L.device = async (req) => {
+  const ep = (req.body || {}).endpoint;
+  if (!ep || typeof ep !== 'string') return null;
+  const id = L.devId(ep), redis = L.getRedis();
+  const sub = await redis.hget('overload:subs', id);
+  return sub ? { id, sub, meta: (await redis.hget('overload:dmeta', id)) || {} } : null;
+};
+// Limite d'appels par adresse IP
+L.limited = async (req, name, max) => {
+  const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'local';
+  const k = 'overload:rl:' + name + ':' + crypto.createHash('sha256').update(ip).digest('hex'), redis = L.getRedis();
+  const n = await redis.incr(k);
+  if (n === 1) await redis.expire(k, 900);
+  return n > max;
+};
+
+// Envoie à un appareil ({ id: abonnement }) ou à tous
+L.sendAll = async (payload, host, only) => {
   const redis = L.getRedis();
   const push = L.getPush(host);
-  const subs = (await redis.hgetall('overload:subs')) || {};
+  const subs = only || (await redis.hgetall('overload:subs')) || {};
   let sent = 0, failed = 0;
   await Promise.all(Object.entries(subs).map(async ([id, sub]) => {
     try {
@@ -52,7 +71,7 @@ L.sendAll = async (payload, host) => {
       sent++;
     } catch (e) {
       failed++;
-      if (e && (e.statusCode === 404 || e.statusCode === 410)) await redis.hdel('overload:subs', id);
+      if (e && (e.statusCode === 404 || e.statusCode === 410)) { await redis.hdel('overload:subs', id); await redis.hdel('overload:dmeta', id); }
     }
   }));
   return { sent, failed };
@@ -62,9 +81,16 @@ L.sendAll = async (payload, host) => {
 L.route = (method, handler, opts = {}) => async (req, res) => {
   try {
     if (req.method !== method) return res.status(405).json({ error: 'method' });
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    // appareil : reconnu par son abonnement, sans clé
+    if (opts.device) {
+      const dev = await L.device(req);
+      if (!dev) return res.status(401).json({ error: 'appareil inconnu' });
+      return await handler(req, res, host, dev);
+    }
+    if (opts.public) return await handler(req, res, host);
     const ok = L.authed(req) || (opts.cron && L.bearer(req));
     if (!ok) return res.status(401).json({ error: 'auth' });
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
     await handler(req, res, host);
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
