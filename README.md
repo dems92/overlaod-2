@@ -37,3 +37,10 @@ Les séances restent enregistrées sur le téléphone. Exporte une sauvegarde de
 - **Bannière « Objectif de repos atteint »** en haut de l'écran.
 - **Widget** : n'affiche plus que le chrono de repos.
 - **Stats** : barres sous les onglets centrées, plus de contour blanc dans les graphiques.
+
+## Nouveautés (version 1.4)
+
+- **Mode HIIT** (onglet Entraînement → HIIT) : minuteur par intervalles avec bips (aigu = effort, grave = repos, 3 bips courts avant chaque changement). 4 séances de 20 à 30 min + création de ses propres séances (effort, repos, tours, exercices).
+- **Retirer une série** pendant la séance (bouton « − Série »).
+- **Créer mon exercice** dans « Ajouter un exercice » : nom, muscle et matériel ; il rejoint le catalogue (gérable dans Réglages).
+- **Atlas des muscles** (Stats) : carte avant / arrière colorée selon le travail fait ; chaque muscle donne ses exercices, ses portions et un accès direct aux vidéos MuscleWiki.
