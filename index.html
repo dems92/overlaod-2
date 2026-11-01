@@ -2269,7 +2269,7 @@ $('#topchrono').addEventListener('click',()=>{S.ui.chronoHidden=!S.ui.chronoHidd
 
 /* ───────── Notifications push (version en ligne) ───────── */
 const WEB=!window.claude&&('serviceWorker' in navigator)&&/^https?:$/.test(location.protocol);
-const VAPID_PUBLIC='BD2Tl6yg5gaJeI0ltYlXH0YtXe76_4Dzq8tUo34Ct6_I8m-m0fwcNpxNjC5V-dLia_acsC79oEGSG3hD64gS82A';
+const VAPID_PUBLIC='BKawIqQD1uejr1a9PU2mI32Pvd0fPrTYwBpnUOoBF-AVEJSD8yYsGrUHhAsHH4Gd_qNqq1C8LvxEOrW-LEz8REg';
 const canPush=()=>'PushManager' in window&&typeof Notification!=='undefined';
 const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
 const standalone=()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches;
