@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const L = require('./_lib');
 
 const API = 'https://generativelanguage.googleapis.com/v1beta/models';
-const MODELS = [process.env.GEMINI_MODEL || 'gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+const MODELS = [process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite', 'gemini-3.8-flash'];
 const MAX_IMAGES = 4, MAX_IMAGE = 2.5e6, MAX_TEXT = 12000;
 
 const SYSTEM = `Tu convertis les notes d'entraînement de musculation d'un utilisateur (texte collé ou captures d'écran d'une autre app, d'un carnet, d'une note de téléphone, d'un tableau…) en séances pour l'application Overload.
@@ -116,7 +116,7 @@ module.exports = L.route('POST', async (req, res) => {
       const left = 55000 - (Date.now() - t0);
       if (left < 5000) break outer;
       try {
-        r = await fetch(`${API}/${model}:generateContent`, { method: 'POST', signal: AbortSignal.timeout(Math.min(left, 40000)),
+        r = await fetch(`${API}/${model}:generateContent`, { method: 'POST', signal: AbortSignal.timeout(Math.min(left, 30000)),
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, body: body(lite) });
         j = await r.json().catch(() => ({}));
       } catch (e) { r = { ok: false, status: 504 }; j = {}; }
