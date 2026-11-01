@@ -491,6 +491,24 @@ a.btn,a.opt{text-decoration:none}
 a.opt{color:var(--label)}
 a.btn.primary{color:#fff}
 .opt[disabled]{opacity:.35;pointer-events:none}
+
+/* ===== Fenêtre vidéo MuscleWiki ===== */
+.vid-wrap{position:fixed;inset:0;z-index:70;display:grid;place-items:center;padding:16px}
+.vid-wrap .scrim{position:absolute;inset:0;background:rgba(0,0,0,.72)}
+.vid{position:relative;width:min(100%,460px);max-height:calc(100% - 24px);overflow-y:auto;background:var(--surface);border:1px solid var(--glass-edge);border-radius:22px;box-shadow:0 18px 60px rgba(0,0,0,.7);animation:fadein .18s ease-out}
+.vid-h{display:flex;align-items:center;gap:10px;padding:12px 12px 8px 16px;position:sticky;top:0;background:var(--surface);z-index:1}
+.vid-h b{display:block;font:600 1rem var(--font-display);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vid-h span{font-size:.75rem;color:var(--label-2)}
+.vid-h .icon-btn{width:38px;height:38px;flex:none}
+.vid-b{padding:0 16px 16px;display:grid;gap:12px}
+.vid-v{width:100%;aspect-ratio:1;object-fit:contain;background:#000;border-radius:14px;display:block}
+.vid-load,.vid-msg{padding:28px 8px;text-align:center;color:var(--label-2);font-size:.9375rem}
+.vid-msg{padding:16px 4px 4px}
+.vid-n{font-weight:600}
+.vid-steps{margin:0;padding-left:20px;color:var(--label-2);font-size:.875rem;display:grid;gap:6px}
+.vid-q{display:flex;gap:8px}
+.vid-q .btn{height:44px;padding:0 16px;flex:none}
+.vid-credit{font-size:.6875rem;color:var(--label-3);text-align:center;text-decoration:none}
 </style>
 </head>
 <body>
@@ -1508,6 +1526,7 @@ function exCard(e,i,open,total){
     body+=`<div class="opts" role="group" aria-label="Options de l’exercice">
       <button class="opt${fav?' on':''}" data-a="fav" data-i="${i}" aria-pressed="${fav}">${fav?I.star.replace('<svg','<svg style="fill:currentColor"'):I.star}<span>Favori</span></button>
       <button class="opt${e.perSet?' on':''}" data-a="vary" data-i="${i}" aria-pressed="${!!e.perSet}">${I.vary}<span>Poids par série</span></button>
+      <button class="opt" data-a="vid" data-i="${i}">${I.play}<span>Vidéo</span></button>
       <button class="opt" data-a="rmset" data-i="${i}"${e.setsData.length<2?' disabled':''} aria-label="Retirer une série">−<span>Série</span></button>
       <button class="opt" data-a="addset" data-i="${i}">${I.plus}<span>Série</span></button></div>
       <div class="ex-foot"><button class="txt muted" data-a="rmex" data-i="${i}">Retirer l'exercice</button></div></div>`;
@@ -1593,6 +1612,7 @@ function trainAction(act,d){
     case 'bisundo':e.setsData[j].bis.done=false;break;
     case 'bisdone':{e.setsData[j].bis.done=true;startRest(a);if(navigator.vibrate)navigator.vibrate(10);
       if(fullyDone(e)){const k=a.exercises.findIndex(x=>!fullyDone(x));S.ui.open=k<0?-1:k}break}
+    case 'vid':openVideo(e.name);return;
     case 'rmset':{if(e.setsData.length<2)break;
       /* retire la dernière série pas encore validée, sinon la dernière */
       let k=-1;for(let x=e.setsData.length-1;x>=0;x--){const st=e.setsData[x];if(!st.done&&!(st.bis&&st.bis.done)){k=x;break}}
@@ -1842,12 +1862,67 @@ function openMuscle(k){
       ctx.body.innerHTML=`<div style="padding:4px 16px 0"><p class="sub" style="margin:0 0 12px">${sets} série${sets>1?'s':''} sur la période choisie dans les stats · ${list.length} exercice${list.length>1?'s':''}</p>
         <a class="btn primary block" href="${M.mw?MW+M.mw:'https://musclewiki.com/fr-fr'}" target="_blank" rel="noopener">Voir les vidéos MuscleWiki</a></div>
         ${ps?`<div class="chips-scroll sub" style="padding-top:12px"><span class="chips-lbl">Portion</span>${['',...ps].map(p=>`<button class="chip${p===por?' on':''}" data-por="${esc(p)}">${p?esc(p):'Toutes'}</button>`).join('')}</div>`:''}
-        <div style="padding:0 16px"><div class="group">${list.map(c=>`<div class="row"><div class="grow"><div class="t">${esc(c.name)}</div><div class="tagline">${c.portion?`<span class="tg p">${esc(c.portion)}</span>`:''}<span class="tg">${esc(c.eq)} · ${esc(c.type)}</span></div></div><a class="opt" style="flex:none" href="https://www.youtube.com/results?search_query=${encodeURIComponent(c.name+' exécution musculation')}" target="_blank" rel="noopener" aria-label="Vidéo : ${esc(c.name)}">${I.play}<span>Vidéo</span></a></div>`).join('')}</div>
-        <p class="s" style="margin:12px 4px">Les liens s’ouvrent dans une fenêtre par-dessus l’app : ferme-la pour revenir ici.</p></div>`;
+        <div style="padding:0 16px"><div class="group">${list.map(c=>`<div class="row"><div class="grow"><div class="t">${esc(c.name)}</div><div class="tagline">${c.portion?`<span class="tg p">${esc(c.portion)}</span>`:''}<span class="tg">${esc(c.eq)} · ${esc(c.type)}</span></div></div><button class="opt" style="flex:none" data-vid="${esc(c.name)}" aria-label="Vidéo : ${esc(c.name)}">${I.play}<span>Vidéo</span></button></div>`).join('')}</div>
+        <p class="s" style="margin:12px 4px">« Vidéo » ouvre la démonstration MuscleWiki dans l’app. ${MW_CREDIT}.</p></div>`;
     };
     draw();
-    ctx.body.onclick=e=>{const b=e.target.closest('[data-por]');if(b){por=b.dataset.por;draw()}};
+    ctx.body.onclick=e=>{const v=e.target.closest('[data-vid]');if(v){openVideo(v.dataset.vid);return}const b=e.target.closest('[data-por]');if(b){por=b.dataset.por;draw()}};
   }});
+}
+
+/* ───────── Vidéo d'exécution MuscleWiki (fenêtre dans l'app) ───────── */
+const MW_CREDIT='Exercise data and videos provided by MuscleWiki.com';
+/* nom français → recherche anglaise MuscleWiki (le plus précis d'abord) */
+const EN_MOVES=[['souleve de terre roumain','romanian deadlift'],['souleve de terre jambes semi-tendues','stiff leg deadlift'],['souleve de terre sumo','sumo deadlift'],['souleve de terre','deadlift'],
+  ['developpe couche prise serree','close grip bench press'],['developpe couche','bench press'],['developpe incline','incline bench press'],['developpe decline','decline bench press'],['developpe militaire','overhead press'],['developpe arnold','arnold press'],['developpe epaules','shoulder press'],['developpe halteres','dumbbell shoulder press'],['presse a epaules','shoulder press'],['chest press','chest press'],
+  ['reverse pec deck','reverse fly'],['pec deck','pec deck'],['ecarte','fly'],['pompes','push up'],['dips','dips'],['tractions','pull up'],['pulldown bras tendus','straight arm pulldown'],['tirage vertical','lat pulldown'],['tirage horizontal','seated row'],['rowing vertical','upright row'],['rowing inverse','inverted row'],['rowing','row'],['face pull','face pull'],["haussements d'epaules",'shrug'],['shrug','shrug'],
+  ['elevations laterales','lateral raise'],['elevation laterale','lateral raise'],['elevations frontales','front raise'],['oiseau','rear delt fly'],['rotation externe','external rotation'],
+  ['curl marteau','hammer curl'],['curl incline','incline curl'],['curl concentration','concentration curl'],['curl pupitre','preacher curl'],['curl inverse','reverse curl'],['spider curl','spider curl'],['curl','curl'],
+  ['barre au front','skull crusher'],['extension triceps','tricep extension'],['au-dessus de la tete','overhead tricep extension'],['pushdown','tricep pushdown'],['kickback','kickback'],
+  ['hip thrust','hip thrust'],['glute bridge','glute bridge'],['pont fessier','glute bridge'],['bulgarian split squat','bulgarian split squat'],['split squat','split squat'],['fente','lunge'],['presse a cuisses','leg press'],['hack squat','hack squat'],['goblet squat','goblet squat'],['front squat','front squat'],['sissy squat','sissy squat'],['squat','squat'],
+  ['leg extension','leg extension'],['leg curl','leg curl'],['nordic','nordic hamstring curl'],['good morning','good morning'],['swing kettlebell','kettlebell swing'],['extensions du dos','back extension'],['pull-over','pullover'],
+  ['mollets assis','seated calf raise'],['mollets','calf raise'],['abduction','hip abduction'],['adduction','hip adduction'],['crunch','crunch'],['planche laterale','side plank'],['planche','plank'],['releves de jambes','hanging leg raise'],['releves de genoux','knee raise'],['russian twist','russian twist'],['dead bug','dead bug'],['ab wheel','ab wheel rollout'],
+  ['flexion des poignets','wrist curl'],['extension des poignets','reverse wrist curl'],['burpee','burpee'],['mountain climbers','mountain climber'],['step-up','step up'],['farmer','farmers walk'],['thruster','thruster'],['box jump','box jump'],['wall ball','wall ball']];
+const EN_EQ=[['smith','smith machine'],['barre','barbell'],['halteres','dumbbell'],['haltere','dumbbell'],['poulie','cable'],['kettlebell','kettlebell'],['elastique','band'],['machine','machine']];
+function mwQuery(name){const n=norm(name);const mv=EN_MOVES.find(([f])=>n.includes(f));if(!mv)return n;const eq=EN_EQ.find(([f])=>n.includes(f));return(eq&&!mv[1].includes(eq[1])?eq[1]+' ':'')+mv[1]}
+const mwSlug=name=>{const g=groupOf(name),k=Object.keys(MUSC).find(x=>MUSC[x].g===g&&MUSC[x].mw);return k?MW+MUSC[k].mw:'https://musclewiki.com/fr-fr'};
+
+function openVideo(name){
+  let q=mwQuery(name),data=null,sel=0,angle='front',busy=false;
+  const wrap=document.createElement('div');wrap.className='vid-wrap';
+  wrap.innerHTML=`<div class="scrim" style="opacity:1"></div><div class="vid" role="dialog" aria-modal="true" aria-label="Vidéo : ${esc(name)}"><div class="vid-h"><div class="grow"><b>${esc(name)}</b><span id="vid-sub">MuscleWiki</span></div><button class="icon-btn" data-x aria-label="Fermer"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div><div class="vid-b"></div></div>`;
+  document.body.appendChild(wrap);$('#app').inert=true;
+  const body=$('.vid-b',wrap);
+  const close=()=>{const v=$('video',wrap);if(v){v.pause();v.removeAttribute('src');v.load()}wrap.remove();if(!sheetStack.length)$('#app').inert=false;document.removeEventListener('keydown',esck)};
+  const esck=e=>{if(e.key==='Escape')close()};document.addEventListener('keydown',esck);
+  const search=`<form class="vid-q"><input class="key-in" value="${esc(q)}" aria-label="Recherche MuscleWiki (en anglais)" autocapitalize="off" spellcheck="false"><button class="btn secondary" type="submit">Chercher</button></form>`;
+  const credit=`<a class="vid-credit" href="https://musclewiki.com" target="_blank" rel="noopener">${MW_CREDIT}</a>`;
+  const src=v=>{const u=/^https?:/.test(v.url)?v.url:data.base+v.url;return data.token?u+(u.includes('?')?'&':'?')+'token='+encodeURIComponent(data.token):u};
+  const draw=()=>{
+    if(!data){body.innerHTML=`<div class="vid-load">Chargement de la vidéo…</div>`;return}
+    if(data.err){body.innerHTML=`<div class="vid-msg">${data.err}</div>${data.nokey?'':search}<a class="btn primary block" href="${mwSlug(name)}" target="_blank" rel="noopener">Voir sur le site MuscleWiki</a>`;return}
+    const r=data.results;if(!r.length){body.innerHTML=`<div class="vid-msg">Aucun résultat pour « ${esc(q)} ». Essaie un autre nom en anglais.</div>${search}${credit}`;return}
+    const x=r[sel],vs=x.videos,v=vs.find(z=>z.angle===angle&&z.gender==='male')||vs.find(z=>z.angle===angle)||vs[0];
+    body.innerHTML=`${v?`<video class="vid-v" src="${esc(src(v))}" autoplay muted loop playsinline controls controlslist="nodownload" disablepictureinpicture></video>`:'<div class="vid-msg">Pas de vidéo pour cet exercice.</div>'}
+      ${vs.some(z=>z.angle==='side')?`<div class="seg" role="radiogroup" aria-label="Angle">${[['front','Face'],['side','Côté']].map(([k,l])=>`<button role="radio" aria-checked="${angle===k}" data-ang="${k}">${l}</button>`).join('')}</div>`:''}
+      <div class="vid-n">${esc(x.name)}${x.difficulty?` <span class="badge">${esc(x.difficulty)}</span>`:''}</div>
+      ${x.steps.length?`<ol class="vid-steps">${x.steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol>`:''}
+      ${r.length>1?`<div class="sec" style="margin-top:14px">Pas le bon ? Autres résultats</div><div class="opts" style="margin-top:0">${r.map((y,k)=>k===sel?'':`<button class="opt" data-sel="${k}">${esc(y.name)}</button>`).join('')}</div>`:''}
+      ${search}${credit}`;
+  };
+  const load=async()=>{if(busy)return;busy=true;data=null;draw();$('#vid-sub').textContent='MuscleWiki · « '+q+' »';
+    try{const r=await fetch('/api/mw?q='+encodeURIComponent(q));const j=await r.json().catch(()=>({}));
+      if(r.status===501)data={nokey:true,err:'Les vidéos dans l’app passent par l’API officielle MuscleWiki : elles s’activent dès que la clé <b>MUSCLEWIKI_KEY</b> est ajoutée dans Vercel. En attendant, ouvre la page du muscle sur MuscleWiki.'};
+      else if(!r.ok)data={err:esc(j.error||'Erreur '+r.status)};
+      else{data=j;sel=0}}
+    catch(e){data={err:'Impossible de joindre le serveur.'}}
+    busy=false;draw()};
+  wrap.addEventListener('click',e=>{
+    if(e.target.closest('[data-x]')||e.target.classList.contains('scrim')){close();return}
+    const a=e.target.closest('[data-ang]');if(a){angle=a.dataset.ang;draw();return}
+    const s=e.target.closest('[data-sel]');if(s){sel=+s.dataset.sel;angle='front';draw()}});
+  wrap.addEventListener('submit',e=>{e.preventDefault();const v=$('.vid-q input',wrap).value.trim();if(v.length>1){q=v;load()}});
+  load();
 }
 
 /* ───────── Catalogue (feuille de recherche) ───────── */
@@ -2113,7 +2188,7 @@ function renderSet(){
     <button class="row" data-a="export"><div class="grow"><div class="t" style="color:var(--accent)">Exporter mes données</div><div class="s">Fichier de sauvegarde JSON</div></div></button>
     <button class="row" data-a="import"><div class="grow"><div class="t" style="color:var(--accent)">Importer une sauvegarde</div><div class="s">Ajoute les séances et le programme d’un fichier</div></div></button></div><input type="file" id="imp" accept="application/json,.json" hidden>
     <div class="about"><img src="${LOGO_FAB}" alt=""><div><b>Overload</b><span>Simple · épurée · moderne · efficace</span></div></div>
-    <p class="s" style="margin:18px 4px">Catalogue : ${CATALOG.length} exercices issus de l’atlas anatomique.</p></div>`;
+    <p class="s" style="margin:18px 4px">Catalogue : ${CATALOG.length} exercices issus de l’atlas anatomique. ${MW_CREDIT}.</p></div>`;
 }
 function gymBlock(){
   const gs=S.settings.gyms||[];

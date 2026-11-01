@@ -44,3 +44,8 @@ Les séances restent enregistrées sur le téléphone. Exporte une sauvegarde de
 - **Retirer une série** pendant la séance (bouton « − Série »).
 - **Créer mon exercice** dans « Ajouter un exercice » : nom, muscle et matériel ; il rejoint le catalogue (gérable dans Réglages).
 - **Atlas des muscles** (Stats) : carte avant / arrière colorée selon le travail fait ; chaque muscle donne ses exercices, ses portions et un accès direct aux vidéos MuscleWiki.
+
+## Nouveautés (version 1.5)
+
+- **Vidéos MuscleWiki dans l'app** : bouton « Vidéo » (atlas des muscles et exercices en séance) → fenêtre avec la démonstration MuscleWiki, vue de face ou de côté, étapes et autres résultats. Passe par l'API officielle : ajouter la variable `MUSCLEWIKI_KEY` dans Vercel (offre Testing minimum). Sans clé, la fenêtre renvoie vers le site MuscleWiki.
+- Exercise data and videos provided by MuscleWiki.com
