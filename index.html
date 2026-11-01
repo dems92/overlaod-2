@@ -1191,7 +1191,7 @@ const Cloud={
     const j=await r.json().catch(()=>({}));
     if(!r.ok){const e=new Error(j.error||'Erreur '+r.status);e.status=r.status;throw e}
     return j},
-  payload(){return{app:'overload',v:2,templates:S.templates,sessions:S.sessions,settings:S.settings,deleted:S.deleted}},
+  payload(){return{app:'overload',aid:Stats.aid,v:2,templates:S.templates,sessions:S.sessions,settings:S.settings,deleted:S.deleted}},
   /* envoi automatique 3 s après le dernier changement */
   queue(){if(!WEB_API||!Cloud.acct)return;clearTimeout(Cloud.t);Cloud.t=setTimeout(()=>Cloud.push(),3000)},
   async push(force){if(!Cloud.acct)return;const data=Cloud.payload(),str=JSON.stringify(data);if(!force&&str===Cloud.last)return;
@@ -1199,7 +1199,7 @@ const Cloud={
   async pull(){if(!Cloud.acct)return;
     try{const j=await Cloud.api('backup',{method:'GET'});if(j&&j.data)mergeData(j.data);cache();paint();await Cloud.push(true)}catch(e){Cloud.fail(e)}},
   fail(e){if(e&&e.status===401){Cloud.acct=null;Cloud.keep();setSync('local');toast('Session expirée : reconnecte-toi');return}setSync('error')},
-  async auth(action,email,password){const j=await Cloud.api('account',{body:{action,email,password}});Cloud.acct={email:j.email,token:j.token};Cloud.keep();await Cloud.pull();return j},
+  async auth(action,email,password){const j=await Cloud.api('account',{body:{action,email,password}});Cloud.acct={email:j.email,token:j.token};Stats.evt(action==='register'?'account_new':'account_login');Cloud.keep();await Cloud.pull();return j},
   async logout(){try{await Cloud.api('account',{body:{action:'logout'}})}catch(e){}Cloud.acct=null;Cloud.keep();Cloud.last='';Cloud.setAt(null);setSync('local')}
 };
 Cloud.load();
@@ -1257,7 +1257,7 @@ const W={
 };
 const saveApp=()=>{S.settings._at=Date.now();cache();W.app()};
 const saveActive=()=>{cache();W.active()};
-async function pushSession(rec){const i=S.sessions.findIndex(s=>s.id===rec.id);if(i>=0)S.sessions[i]=rec;else S.sessions.push(rec);S.sessions.sort((a,b)=>b.startedAt-a.startedAt);cache();if(S.refs){try{await S.refs.sessions.doc(rec.id).set(rec)}catch(e){setSync('error')}}}
+async function pushSession(rec){Stats.session(rec);const i=S.sessions.findIndex(s=>s.id===rec.id);if(i>=0)S.sessions[i]=rec;else S.sessions.push(rec);S.sessions.sort((a,b)=>b.startedAt-a.startedAt);cache();if(S.refs){try{await S.refs.sessions.doc(rec.id).set(rec)}catch(e){setSync('error')}}}
 async function dropSession(id){S.sessions=S.sessions.filter(s=>s.id!==id);if(!S.deleted.sessions.includes(id))S.deleted.sessions.push(id);cache();if(S.refs){try{await S.refs.sessions.doc(id).delete()}catch(e){setSync('error')}}}
 function setSync(v){S.sync=v;const d=$('#syncdot');d.className='dot'+(v==='live'?' live':v==='error'?' err':'');d.title=v==='live'?'Synchronisé':v==='error'?'Erreur de synchronisation':'Stockage local';if(S.tab==='set')paint()}
 
@@ -1643,7 +1643,7 @@ function trainAction(act,d){
   }
   saveActive();paint();
 }
-function startRest(a){a.restRun=true;a.restAcc=0;a.restStart=Date.now();a.alerted=false;a.targetHit=false;Push.planRest(0)}
+function startRest(a){if(a.restStart){const r=Math.round(restElapsed(a)/1000);if(r>=5&&r<=900)(a.rests||(a.rests=[])).push(r)}a.restRun=true;a.restAcc=0;a.restStart=Date.now();a.alerted=false;a.targetHit=false;Push.planRest(0)}
 function restMain(a){if(a.restRun){a.restAcc=restElapsed(a);a.restRun=false;Push.cancel()}else{a.restRun=true;a.restStart=Date.now();Push.planRest(a.restAcc/1000)}}
 function openGymPicker(cur,onPick){
   openSheet({title:'Salle de sport',tall:false,left:'Annuler',build(ctx){
@@ -1663,7 +1663,7 @@ function openFinish(){
   }});
 }
 function buildRecord(){const a=S.active,end=Date.now();
-  return{id:a.id,tplId:a.tplId||null,name:a.name,...(a.gym?{gym:a.gym}:{}),startedAt:a.startedAt,endedAt:end,bw:bwOf(),tempo:tempoOf(),duration:Math.round((end-a.startedAt)/1000),
+  return{id:a.id,...(a.rests&&a.rests.length?{rests:a.rests.slice(0,120),restT:restTarget()}:{}),tplId:a.tplId||null,name:a.name,...(a.gym?{gym:a.gym}:{}),startedAt:a.startedAt,endedAt:end,bw:bwOf(),tempo:tempoOf(),duration:Math.round((end-a.startedAt)/1000),
     exercises:a.exercises.map(e=>{const reps=[],ws=[],bisSets=[];
       e.setsData.forEach(st=>{if(st.done){reps.push(st.reps);ws.push(st.w!=null?st.w:e.weight)}
         if(st.bis&&st.bis.done){bisSets.push(reps.length);reps.push(st.bis.reps);ws.push(st.bis.w)}});
@@ -2064,7 +2064,7 @@ function openAiImport(){
         const r=await fetch('/api/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:st.text,images:st.shots,catalog:aiCatalog()})});
         const j=await r.json().catch(()=>({}));
         if(!r.ok)throw new Error(j.error||'Erreur '+r.status);
-        st.res=j;st.pick=j.sessions.map(()=>true);
+        st.res=j;st.pick=j.sessions.map(()=>true);Stats.evt('ai_import');
       }catch(e){toast(/Failed to fetch|NetworkError|Load failed/.test(e.message)?'Impossible de joindre le serveur':e.message.slice(0,90))}
       st.busy=false;draw();
     }
@@ -2077,7 +2077,7 @@ function openAiImport(){
           if(!it){L.push({name:e.name,group:GROUPS.includes(e.group)?e.group:'Autre',code:'au'});syncCustom();made++;it=CATALOG.find(c=>c.name===e.name)}
           t.exercises.push({id:uid8(),name:it?it.name:e.name,group:it?it.group:e.group,eq:it?it.eq:'',sets:e.sets,reps:e.reps,...(e.weight?{w:e.weight}:{}),...(e.weights?{ws:e.weights}:{})});
         }
-        S.templates.push(t);n++});
+        S.templates.push(t);n++});Stats.evt('ai_save',n);
       saveApp();ctx.close();go('plan');toast(n+' séance'+(n>1?'s':'')+' importée'+(n>1?'s':'')+(made?' · '+made+' exercice'+(made>1?'s':'')+' créé'+(made>1?'s':''):''));
     }
     ctx.body.oninput=e=>{if(e.target.matches('.ai-in')){st.text=e.target.value;const ok=!!(st.text.trim()||st.shots.length);ctx.setRight('Analyser',run,!ok);const b=ctx.body.querySelector('[data-a="run"]');if(b)b.disabled=!ok}};
@@ -2255,7 +2255,7 @@ function renderSet(){
     <div class="row"><div class="grow"><div class="t">Chronomètre libre hors séance</div><div class="s">Garde le widget affiché même sans séance en cours</div></div><button class="sw" role="switch" aria-checked="${!!S.settings.widgetFree}" data-a="wf-toggle" aria-label="Chronomètre libre hors séance"></button></div></div>
     ${gymBlock()}
     ${(S.settings.customEx||[]).length?`<div class="sec">Mes exercices perso</div><div class="group">${S.settings.customEx.map(c=>`<div class="row"><div class="grow"><div class="t">${esc(c.name)}</div><div class="s">${esc(c.group)} · ${esc(EQ[c.code]||'Autre')}</div></div><button class="txt muted" data-a="cx-rm" data-n="${esc(c.name)}">Retirer</button></div>`).join('')}</div>`:''}
-    ${notifBlock()}
+    ${notifBlock()}${statsBlock()}
     <div class="sec">Calories</div>
     <div class="group"><div class="row"><div class="grow"><div class="t">Poids de corps</div><div class="s">Le guide se base sur 75 kg</div></div><div class="mini-step"><button data-a="bw-" aria-label="Moins un kilo">−</button><b style="min-width:4.4ch">${S.settings.bw} kg</b><button data-a="bw+" aria-label="Plus un kilo">+</button></div></div>
     <div class="row"><div class="grow"><div class="t">Tempo par répétition</div><div class="s">Temps sous tension estimé</div></div><div class="mini-step"><button data-a="tp-" aria-label="Moins une demi-seconde">−</button><b style="min-width:3.6ch">${fmtN(S.settings.tempo,1)} s</b><button data-a="tp+" aria-label="Plus une demi-seconde">+</button></div></div></div>
@@ -2328,7 +2328,7 @@ app.addEventListener('click',e=>{
     else if(a==='import')$('#imp').click()
     else if(a==='notif-toggle'){(Push.on?Push.disable():Push.enable()).then(()=>paint())}
     else if(a==='notif-test'){Push.api('test').then(o=>toast(o.sent?'Notification envoyée':'Aucun appareil enregistré')).catch(Push.fail)}
-    else if(a==='rp-toggle'){S.settings.restPush=S.settings.restPush===false;saveApp();if(S.settings.restPush===false)Push.cancel();Push.sync().catch(Push.fail);paint()}
+    else if(a==='stats-toggle'){S.settings.stats=S.settings.stats===false;saveApp();paint()}else if(a==='rp-toggle'){S.settings.restPush=S.settings.restPush===false;saveApp();if(S.settings.restPush===false)Push.cancel();Push.sync().catch(Push.fail);paint()}
     else if(a==='inact-'||a==='inact+'){const v=(S.settings.inactiveDays??3)+(a==='inact+'?1:-1);S.settings.inactiveDays=clamp(v,0,30);saveApp();Push.sync().catch(Push.fail);paint()}}
 });
 app.addEventListener('change',e=>{
@@ -2412,6 +2412,26 @@ function notifBlock(){
     <div class="row"><div class="grow"><div class="t">Rappel d’inactivité</div><div class="s">Prévenu après ${days?days+' jour'+(days>1?'s':''):'X jours'} sans séance</div></div><div class="mini-step"><button data-a="inact-" aria-label="Moins un jour">−</button><b style="min-width:3.4ch">${days?days+' j':'Off'}</b><button data-a="inact+" aria-label="Plus un jour">+</button></div></div>
     ${Push.on?`<button class="row" data-a="notif-test"><div class="grow"><div class="t" style="color:var(--accent)">Envoyer une notification test</div></div></button>`:''}</div>`;
 }
+
+/* ───────── Statistiques d'usage anonymes (aucun e-mail ni nom) ───────── */
+const Stats={aid:null,lastOpen:0,
+  on(){return WEB_API&&S.settings.stats!==false&&!!Stats.aid},
+  send(body,t=Date.now()){if(!Stats.on())return;const d=new Date(t);
+    fetch('/api/ev',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,body:JSON.stringify({...body,aid:Stats.aid,day:dayKey(t),h:d.getHours(),wd:d.getDay()})}).catch(()=>{})},
+  init(){try{Stats.aid=localStorage.getItem('overload.aid');if(!Stats.aid){Stats.aid=(uid8()+uid8()).replace(/[^a-z0-9]/g,'');localStorage.setItem('overload.aid',Stats.aid)}}catch(e){}
+    setTimeout(Stats.open,2500);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-Stats.lastOpen>30*6e4)Stats.open()})},
+  open(){Stats.lastOpen=Date.now();const ua=navigator.userAgent;
+    Stats.send({type:'open',plat:isIOS?'ios':/Android/i.test(ua)?'android':'desktop',pwa:standalone()?1:0,push:Push.on?1:0,acct:Cloud.acct?1:0,n:S.sessions.length,tpl:S.templates.length})},
+  evt(name,n=1){Stats.send({type:'evt',name,n})},
+  session(rec){if(!rec||!rec.id)return;
+    Stats.send({type:'session',s:{id:rec.id,t:rec.startedAt,dur:rec.duration||0,hiit:rec.type==='hiit'?1:0,tpl:rec.tplId?1:0,gym:rec.gym||'',rests:rec.rests||[],rt:rec.restT||0,
+      ex:(rec.exercises||[]).map(e=>[e.name,e.group||'',e.reps.length,sum(e.reps),Math.round(exVol(e)),Math.max(0,...exWeights(e))])}},rec.startedAt)}
+};
+function statsBlock(){
+  if(!WEB_API)return '';
+  return `<div class="sec">Confidentialité</div><div class="group"><div class="row"><div class="grow"><div class="t">Statistiques d’utilisation anonymes</div><div class="s">Fréquence, séances, repos : sans e-mail ni nom, pour améliorer l’app</div></div><button class="sw" role="switch" aria-checked="${S.settings.stats!==false}" data-a="stats-toggle" aria-label="Statistiques d’utilisation anonymes"></button></div></div>`;
+}
+Stats.init();
 
 /* ───────── Démarrage ───────── */
 go('train');
