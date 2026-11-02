@@ -120,6 +120,12 @@ button.row:active{background:var(--fill)}
 /* Séance en cours */
 .wk-head{position:sticky;top:calc(var(--topbar-h) - 2px);z-index:5;padding:14px 16px;display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;margin-bottom:14px}
 .lbl{font-size:.75rem;color:var(--label-2);font-weight:500}
+#gate{position:fixed;inset:0;z-index:9000;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(env(safe-area-inset-top) + 28px) 20px calc(env(safe-area-inset-bottom) + 28px)}
+#gate .in{max-width:440px;margin:0 auto}#gate h1{font-family:var(--font-display);font-size:1.9rem;margin:0 0 6px}
+#gate .lbl{display:block;margin:14px 2px 6px}#gate .row2{display:flex;gap:10px}#gate .row2>div{flex:1;min-width:0}
+#gate .seg.col{flex-direction:column;border-bottom:0}#gate .seg.col button{flex:none;text-align:left;padding:0 14px;height:46px;border:1px solid var(--separator);border-radius:12px;margin-top:6px}
+#gate .seg.col button[aria-checked="true"]{border-color:var(--accent)}#gate .seg.col button[aria-checked="true"]::after{display:none}
+#gate .ok{display:flex;gap:10px;align-items:flex-start;margin:16px 2px 4px;font-size:.8rem;color:var(--label-2);line-height:1.4}#gate .ok input{width:20px;height:20px;flex:none;margin-top:1px;accent-color:var(--accent)}
 .big{font:700 2.9rem/1 var(--font-display);letter-spacing:-.03em;font-variant-numeric:tabular-nums;margin-top:2px}
 .rest{padding:8px 14px;border-radius:14px;background:var(--fill);min-width:112px}
 .rest:active{background:var(--accent-2)}
@@ -1198,9 +1204,10 @@ const Cloud={
     try{const j=await Cloud.api('backup',{method:'PUT',body:{data}});Cloud.last=str;Cloud.setAt(j.updatedAt);setSync('live')}catch(e){Cloud.fail(e)}},
   async pull(){if(!Cloud.acct)return;
     try{const j=await Cloud.api('backup',{method:'GET'});if(j&&j.data)mergeData(j.data);cache();paint();await Cloud.push(true)}catch(e){Cloud.fail(e)}},
-  fail(e){if(e&&e.status===401){Cloud.acct=null;Cloud.keep();setSync('local');toast('Session expirée : reconnecte-toi');return}setSync('error')},
-  async auth(action,email,password){const j=await Cloud.api('account',{body:{action,email,password}});Cloud.acct={email:j.email,token:j.token};Stats.evt(action==='register'?'account_new':'account_login');Cloud.keep();await Cloud.pull();return j},
-  async logout(){try{await Cloud.api('account',{body:{action:'logout'}})}catch(e){}Cloud.acct=null;Cloud.keep();Cloud.last='';Cloud.setAt(null);setSync('local')}
+  fail(e){if(e&&e.status===401){Cloud.acct=null;Cloud.keep();setSync('local');toast('Session expirée : reconnecte-toi');gate();return}setSync('error')},
+  async auth(action,email,password,profile,consent){const j=await Cloud.api('account',{body:{action,email,password,profile,consent,aid:Stats.aid}});Cloud.acct={email:j.email,token:j.token,profile:j.profile||null};Stats.evt(action==='register'?'account_new':'account_login');Cloud.keep();await Cloud.pull();return j},
+  async profile(profile,consent){const j=await Cloud.api('account',{body:{action:'profile',profile,consent,aid:Stats.aid}});Cloud.acct.profile=j.profile;Cloud.keep();return j},
+  async logout(){try{await Cloud.api('account',{body:{action:'logout'}})}catch(e){}Cloud.acct=null;Cloud.keep();Cloud.last='';Cloud.setAt(null);setSync('local');gate()}
 };
 Cloud.load();
 /* fusion appareil + sauvegarde : rien n'est perdu, les suppressions sont respectées */
@@ -1239,10 +1246,59 @@ function openAccount(first){
       catch(x){btn.disabled=false;err.textContent=/Base de donn|Redis/i.test(x.message)?'La sauvegarde en ligne n’est pas encore activée sur le serveur.':x.status?x.message:'Impossible de joindre le serveur'}};
   }});
 }
+/* ───────── Entrée obligatoire : compte + profil ───────── */
+const SEXES=[['h','Homme'],['f','Femme'],['a','Autre']],GOALS=[['perte','Perte de poids'],['masse','Prise de masse'],['maintien','Maintien calorique']];
+const hasProfile=()=>!!(Cloud.acct&&Cloud.acct.profile&&Cloud.acct.profile.first);
+function gateOff(){const g=$('#gate');if(g)g.remove();$('#app').inert=!!sheetStack.length}
+function gate(edit){
+  if(!WEB_API)return;
+  let g=$('#gate');
+  if(Cloud.acct&&hasProfile()&&!edit){gateOff();return}
+  if(g&&!edit&&g.dataset.on===String(!!Cloud.acct))return;if(g)g.remove();
+  g=document.createElement('div');g.id='gate';g.dataset.on=String(!!Cloud.acct);g.setAttribute('role','dialog');g.setAttribute('aria-modal','true');document.body.appendChild(g);$('#app').inert=true;
+  const p=(Cloud.acct&&Cloud.acct.profile)||{};
+  const f={mode:Cloud.acct?'profile':'register',first:p.first||'',last:p.last||'',sex:p.sex||'',goal:p.goal||'',email:'',pw:'',ok:false};
+  const radios=(k,list,col)=>`<div class="seg${col?' col':''}" role="radiogroup">${list.map(([v,l])=>`<button type="button" role="radio" aria-checked="${f[k]===v}" data-r="${k}" data-v="${v}">${l}</button>`).join('')}</div>`;
+  const draw=()=>{const m=f.mode,prof=m!=='login',cred=m!=='profile',newC=m==='register'||(m==='profile'&&!edit);
+    g.innerHTML=`<div class="in"><h1>${m==='login'?'Content de te revoir':m==='profile'?(edit?'Mon profil':'Complète ton profil'):'Bienvenue sur Overload'}</h1>
+      <p class="sub" style="margin:0 2px 18px">${m==='login'?'Connecte-toi pour retrouver tes séances.':m==='profile'?'Ces informations personnalisent ton suivi.':'Crée ton compte pour commencer : tes séances sont sauvegardées en ligne et te suivent sur tous tes appareils.'}</p>
+      ${m!=='profile'?`<div class="seg" role="radiogroup" aria-label="Choix">${[['register','Créer un compte'],['login','J’ai déjà un compte']].map(([v,l])=>`<button type="button" role="radio" aria-checked="${m===v}" data-m="${v}">${l}</button>`).join('')}</div>`:''}
+      <form novalidate>
+      ${prof?`<div class="row2"><div><label class="lbl" for="g-f">Prénom</label><input class="key-in" id="g-f" value="${esc(f.first)}" autocomplete="given-name" maxlength="40"></div>
+        <div><label class="lbl" for="g-l">Nom</label><input class="key-in" id="g-l" value="${esc(f.last)}" autocomplete="family-name" maxlength="40"></div></div>
+        <span class="lbl">Sexe</span>${radios('sex',SEXES)}
+        <span class="lbl">Ton objectif</span>${radios('goal',GOALS,1)}`:''}
+      ${cred?`<label class="lbl" for="g-e">Adresse e-mail</label><input class="key-in" id="g-e" type="email" value="${esc(f.email)}" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false">
+        <label class="lbl" for="g-p">Mot de passe${m==='register'?' (6 caractères minimum)':''}</label><input class="key-in" id="g-p" type="password" autocomplete="${m==='register'?'new-password':'current-password'}">`:''}
+      ${newC?`<label class="ok"><input type="checkbox" id="g-ok"${f.ok?' checked':''}><span>J’accepte que mes informations (prénom, nom, sexe, e-mail, objectif) et mes séances soient enregistrées et utilisées pour le suivi de l’application et de ma salle. Je peux demander leur suppression à tout moment.</span></label>`:''}
+      <p class="s" id="g-err" role="alert" style="color:var(--accent);min-height:1.3em;margin:10px 2px 6px"></p>
+      <button class="btn primary block" type="submit">${m==='register'?'Créer mon compte':m==='login'?'Me connecter':'Enregistrer'}</button></form>
+      ${m==='profile'?`<button type="button" class="txt muted" style="width:100%;margin-top:8px;text-align:center" data-x>${edit?'Annuler':'Se déconnecter'}</button>`:''}
+      ${m==='register'?'<p class="s" style="margin:14px 2px 0">Garde bien ton mot de passe : il n’y a pas encore de récupération par e-mail.</p>':''}</div>`;
+  };
+  draw();
+  g.oninput=e=>{const id=e.target.id;if(id==='g-f')f.first=e.target.value;if(id==='g-l')f.last=e.target.value;if(id==='g-e')f.email=e.target.value;if(id==='g-p')f.pw=e.target.value;if(id==='g-ok')f.ok=e.target.checked};
+  g.onclick=e=>{const r=e.target.closest('[data-r]');if(r){f[r.dataset.r]=r.dataset.v;r.parentNode.querySelectorAll('[role=radio]').forEach(b=>b.setAttribute('aria-checked',String(b===r)));return}
+    const m=e.target.closest('[data-m]');if(m){f.mode=m.dataset.m;draw();return}
+    if(e.target.closest('[data-x]')){if(edit)gateOff();else Cloud.logout()}};
+  g.onsubmit=async e=>{e.preventDefault();const err=$('#g-err',g),btn=$('form .btn',g),m=f.mode,say=t=>{err.textContent=t};
+    if(m!=='login'){if(!f.first.trim()||!f.last.trim())return say('Indique ton prénom et ton nom');if(!f.sex)return say('Indique ton sexe');if(!f.goal)return say('Choisis ton objectif')}
+    if(m!=='profile'){if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim()))return say('Adresse e-mail invalide');if(f.pw.length<6)return say('Mot de passe : 6 caractères minimum')}
+    if((m==='register'||(m==='profile'&&!edit))&&!f.ok)return say('Coche la case pour accepter l’utilisation de tes données');
+    btn.disabled=true;say('');const profile={first:f.first.trim(),last:f.last.trim(),sex:f.sex,goal:f.goal};
+    try{
+      if(m==='profile'){await Cloud.profile(profile,f.ok);toast(edit?'Profil enregistré':'Bienvenue '+profile.first+' !')}
+      else{const j=await Cloud.auth(m,f.email.trim(),f.pw,m==='register'?profile:undefined,f.ok);
+        if(!hasProfile()){f.mode='profile';draw();return}
+        toast(m==='login'&&j.hasBackup?'Sauvegarde récupérée':'Bienvenue '+Cloud.acct.profile.first+' !')}
+      gateOff();paint();
+    }catch(x){btn.disabled=false;say(/Base de donn|Redis/i.test(x.message)?'Le serveur des comptes n’est pas encore activé.':x.status?x.message:'Impossible de joindre le serveur : vérifie ta connexion')}};
+}
 function accountBlock(){
   if(!WEB_API)return '';
   if(!Cloud.acct)return `<div class="sec">Compte & sauvegarde</div><div class="group"><button class="row" data-a="acct"><div class="grow"><div class="t" style="color:var(--accent)">Créer un compte ou se connecter</div><div class="s">E-mail + mot de passe : retrouve tes séances sur tous tes téléphones et PC</div></div>${I.chev}</button></div>`;
-  return `<div class="sec">Compte & sauvegarde</div><div class="group"><div class="row"><span class="dot${S.sync==='live'?' live':S.sync==='error'?' err':''}"></span><div class="grow"><div class="t">${esc(Cloud.acct.email)}</div><div class="s">${S.sync==='error'?'Échec de la dernière sauvegarde · ':''}${Cloud.at?'Sauvegardé le '+dShort.format(Cloud.at)+' à '+fmtClock(Cloud.at):'Pas encore sauvegardé'}</div></div></div>
+  return `<div class="sec">Compte & sauvegarde</div><div class="group"><div class="row"><span class="dot${S.sync==='live'?' live':S.sync==='error'?' err':''}"></span><div class="grow"><div class="t">${hasProfile()?esc(Cloud.acct.profile.first+' '+Cloud.acct.profile.last)+' · ':''}${esc(Cloud.acct.email)}</div><div class="s">${S.sync==='error'?'Échec de la dernière sauvegarde · ':''}${Cloud.at?'Sauvegardé le '+dShort.format(Cloud.at)+' à '+fmtClock(Cloud.at):'Pas encore sauvegardé'}</div></div></div>
+    <button class="row" data-a="acct-prof"><div class="grow"><div class="t" style="color:var(--accent)">Modifier mon profil</div><div class="s">${hasProfile()?esc((GOALS.find(g=>g[0]===Cloud.acct.profile.goal)||['',''])[1]):''}</div></div>${I.chev}</button>
     <button class="row" data-a="acct-save"><div class="grow"><div class="t" style="color:var(--accent)">Sauvegarder maintenant</div><div class="s">Se fait aussi tout seul à chaque changement</div></div></button>
     <button class="row" data-a="acct-out"><div class="grow"><div class="t">Se déconnecter</div><div class="s">Tes données restent sur cet appareil</div></div></button></div>`;
 }
@@ -2354,6 +2410,7 @@ app.addEventListener('click',e=>{
     else if(a==='cx-rm'){S.settings.customEx=(S.settings.customEx||[]).filter(c=>c.name!==d.n);syncCustom();saveApp();paint();toast('Exercice retiré du catalogue')}
     else if(a==='gym-rm'){const g=S.settings.gyms.find(x=>x.id===d.id);if(g)confirmSheet({title:'Retirer '+g.name+' ?',message:'Les séances déjà faites dans cette salle gardent son nom.',label:'Retirer la salle',onConfirm:()=>{S.settings.gyms=S.settings.gyms.filter(x=>x.id!==g.id);if(S.settings.gym===g.id)S.settings.gym=null;saveApp();paint()}})}
     else if(a==='acct')openAccount(false)
+    else if(a==='acct-prof')gate(true)
     else if(a==='acct-save')Cloud.push(true).then(()=>{if(S.sync==='live')toast('Sauvegarde envoyée');paint()})
     else if(a==='acct-out')confirmSheet({title:'Se déconnecter ?',message:'Tes séances restent sur cet appareil. Reconnecte-toi pour reprendre la sauvegarde.',label:'Se déconnecter',onConfirm:()=>Cloud.logout().then(()=>{paint();toast('Déconnecté')})})
     else if(a==='export')exportData()
@@ -2445,7 +2502,7 @@ function notifBlock(){
     ${Push.on?`<button class="row" data-a="notif-test"><div class="grow"><div class="t" style="color:var(--accent)">Envoyer une notification test</div></div></button>`:''}</div>`;
 }
 
-/* ───────── Statistiques d'usage anonymes (aucun e-mail ni nom) ───────── */
+/* ───────── Statistiques d'usage (reliées au compte de l'utilisateur) ───────── */
 const Stats={aid:null,lastOpen:0,
   on(){return WEB_API&&S.settings.stats!==false&&!!Stats.aid},
   send(body,t=Date.now()){if(!Stats.on())return;const d=new Date(t);
@@ -2461,7 +2518,7 @@ const Stats={aid:null,lastOpen:0,
 };
 function statsBlock(){
   if(!WEB_API)return '';
-  return `<div class="sec">Confidentialité</div><div class="group"><div class="row"><div class="grow"><div class="t">Statistiques d’utilisation anonymes</div><div class="s">Fréquence, séances, repos : sans e-mail ni nom, pour améliorer l’app</div></div><button class="sw" role="switch" aria-checked="${S.settings.stats!==false}" data-a="stats-toggle" aria-label="Statistiques d’utilisation anonymes"></button></div></div>`;
+  return `<div class="sec">Confidentialité</div><div class="group"><div class="row"><div class="grow"><div class="t">Statistiques d’utilisation</div><div class="s">Fréquence, séances, repos : reliées à ton compte, pour le suivi de l’app et de ta salle</div></div><button class="sw" role="switch" aria-checked="${S.settings.stats!==false}" data-a="stats-toggle" aria-label="Statistiques d’utilisation"></button></div></div>`;
 }
 Stats.init();
 
@@ -2469,7 +2526,7 @@ Stats.init();
 go('train');
 (function loop(){tickAll();requestAnimationFrame(loop)})();setInterval(tickAll,1000);document.addEventListener('visibilitychange',tickAll);
 connect();Push.init();
-if(WEB_API){if(Cloud.acct)Cloud.pull();else{let skip=false;try{skip=localStorage.getItem('overload.acct.skip')==='1'}catch(e){}if(!skip)setTimeout(()=>{if(!sheetStack.length&&!Cloud.acct)openAccount(true)},700)}}
+if(WEB_API){if(Cloud.acct)Cloud.pull();gate()}
 })();
 </script>
 <script>if('serviceWorker' in navigator){addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{})})}</script>
